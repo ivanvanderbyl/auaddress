@@ -1,0 +1,20 @@
+# G-NAF dataset (download from data.gov.au)
+g-naf_*/
+*.psv
+
+# Binaries
+gnaf-gen
+*.exe
+
+# Test artifacts
+testdata/gnaf_addresses.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
