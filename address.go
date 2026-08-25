@@ -7,15 +7,44 @@ import (
 )
 
 var (
-	ErrNoPostcode      = errors.New("no valid postcode found")
-	ErrNoState         = errors.New("no valid state found")
-	ErrNoDeliveryLine  = errors.New("no delivery line found")
-	ErrInvalidAddress  = errors.New("invalid address format")
-	ErrEmptyAddress    = errors.New("empty address")
+	ErrNoPostcode     = errors.New("no valid postcode found")
+	ErrNoState        = errors.New("no valid state found")
+	ErrNoDeliveryLine = errors.New("no delivery line found")
+	ErrInvalidAddress = errors.New("invalid address format")
+	ErrEmptyAddress   = errors.New("empty address")
 )
+
+type DeliveryPointKind uint8
+
+const (
+	DeliveryPointStreet DeliveryPointKind = iota + 1
+	DeliveryPointPostal
+)
+
+type StreetDelivery struct {
+	Unit         string
+	Level        string
+	StreetNumber string
+	StreetName   string
+	StreetType   string
+	StreetSuffix string
+}
+
+type PostalDelivery struct {
+	Type   string
+	Number string
+}
+
+type DeliveryPoint struct {
+	Kind   DeliveryPointKind
+	Street StreetDelivery
+	Postal PostalDelivery
+}
 
 type ParsedAddress struct {
 	RawLines []string
+
+	DeliveryPoints []DeliveryPoint
 
 	IsPoBox     bool
 	PoBoxType   string
@@ -299,10 +328,7 @@ func (a *ParsedAddress) Format() string {
 		lines = append(lines, strings.ToUpper(name))
 	}
 
-	deliveryLine := a.FormatDeliveryLine()
-	if deliveryLine != "" {
-		lines = append(lines, deliveryLine)
-	}
+	lines = append(lines, a.FormatDeliveryLines()...)
 
 	localityLine := a.FormatLocalityLine()
 	if localityLine != "" {
@@ -313,34 +339,86 @@ func (a *ParsedAddress) Format() string {
 }
 
 func (a *ParsedAddress) FormatDeliveryLine() string {
-	if a.IsPoBox {
-		return a.PoBoxType + " " + a.PoBoxNumber
+	deliveryLines := a.FormatDeliveryLines()
+	if len(deliveryLines) == 0 {
+		return ""
 	}
 
+	return deliveryLines[0]
+}
+
+func (a *ParsedAddress) FormatDeliveryLines() []string {
+	if len(a.DeliveryPoints) == 0 {
+		if line := a.formatLegacyDeliveryLine(); line != "" {
+			return []string{line}
+		}
+		return nil
+	}
+
+	lines := make([]string, 0, len(a.DeliveryPoints))
+	for _, point := range a.DeliveryPoints {
+		var line string
+		switch point.Kind {
+		case DeliveryPointStreet:
+			line = formatStreetDelivery(point.Street)
+		case DeliveryPointPostal:
+			line = formatPostalDelivery(point.Postal)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	return lines
+}
+
+func (a *ParsedAddress) formatLegacyDeliveryLine() string {
+	if a.IsPoBox {
+		return formatPostalDelivery(PostalDelivery{
+			Type:   a.PoBoxType,
+			Number: a.PoBoxNumber,
+		})
+	}
+
+	return formatStreetDelivery(StreetDelivery{
+		Unit:         a.Unit,
+		Level:        a.Level,
+		StreetNumber: a.StreetNumber,
+		StreetName:   a.StreetName,
+		StreetType:   a.StreetType,
+		StreetSuffix: a.StreetSuffix,
+	})
+}
+
+func formatPostalDelivery(delivery PostalDelivery) string {
+	return strings.TrimSpace(strings.Join([]string{delivery.Type, delivery.Number}, " "))
+}
+
+func formatStreetDelivery(delivery StreetDelivery) string {
 	var parts []string
 
-	if a.Unit != "" {
-		parts = append(parts, a.Unit)
+	if delivery.Unit != "" {
+		parts = append(parts, delivery.Unit)
 	}
 
-	if a.Level != "" {
-		parts = append(parts, a.Level)
+	if delivery.Level != "" {
+		parts = append(parts, delivery.Level)
 	}
 
-	if a.StreetNumber != "" {
-		parts = append(parts, a.StreetNumber)
+	if delivery.StreetNumber != "" {
+		parts = append(parts, delivery.StreetNumber)
 	}
 
-	if a.StreetName != "" {
-		parts = append(parts, a.StreetName)
+	if delivery.StreetName != "" {
+		parts = append(parts, delivery.StreetName)
 	}
 
-	if a.StreetType != "" {
-		parts = append(parts, a.StreetType)
+	if delivery.StreetType != "" {
+		parts = append(parts, delivery.StreetType)
 	}
 
-	if a.StreetSuffix != "" {
-		parts = append(parts, a.StreetSuffix)
+	if delivery.StreetSuffix != "" {
+		parts = append(parts, delivery.StreetSuffix)
 	}
 
 	return strings.Join(parts, " ")

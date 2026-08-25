@@ -280,19 +280,19 @@ func TestParseNormalization(t *testing.T) {
 		input string
 	}{
 		{
-			name: "Windows line endings",
+			name:  "Windows line endings",
 			input: "John Smith\r\n123 Main Street\r\nSYDNEY NSW 2000",
 		},
 		{
-			name: "Mixed line endings",
+			name:  "Mixed line endings",
 			input: "John Smith\r123 Main Street\nSYDNEY NSW 2000",
 		},
 		{
-			name: "Extra whitespace",
+			name:  "Extra whitespace",
 			input: "  John Smith  \n  123   Main   Street  \n  SYDNEY   NSW   2000  ",
 		},
 		{
-			name: "Trailing punctuation",
+			name:  "Trailing punctuation",
 			input: "John Smith,\n123 Main Street.\nSYDNEY NSW 2000,",
 		},
 	}
@@ -416,6 +416,36 @@ SYDNEY NSW 2000`,
 	}
 }
 
+func TestFormatMixedDeliveryPoints(t *testing.T) {
+	addr := &ParsedAddress{
+		DeliveryPoints: []DeliveryPoint{
+			{
+				Kind: DeliveryPointStreet,
+				Street: StreetDelivery{
+					StreetNumber: "123",
+					StreetName:   "MAIN",
+					StreetType:   "ST",
+				},
+			},
+			{
+				Kind: DeliveryPointPostal,
+				Postal: PostalDelivery{
+					Type:   "PO BOX",
+					Number: "42",
+				},
+			},
+		},
+		Locality: "RICHMOND",
+	}
+
+	assertStringSliceEqual(t, "FormatDeliveryLines", []string{
+		"123 MAIN ST",
+		"PO BOX 42",
+	}, addr.FormatDeliveryLines())
+	assertEqual(t, "FormatDeliveryLine", "123 MAIN ST", addr.FormatDeliveryLine())
+	assertEqual(t, "Format", "123 MAIN ST\nPO BOX 42\nRICHMOND", addr.Format())
+}
+
 func TestIsValid(t *testing.T) {
 	t.Run("valid address returns true", func(t *testing.T) {
 		addr, _ := Parse("John Smith\n123 Main St\nSYDNEY NSW 2000")
@@ -451,11 +481,11 @@ func TestHasDeliveryPoint(t *testing.T) {
 
 func TestComplexUnitFormats(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		unit     string
-		level    string
-		number   string
+		name   string
+		input  string
+		unit   string
+		level  string
+		number string
 	}{
 		{
 			name:   "apartment prefix",
