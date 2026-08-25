@@ -2,7 +2,6 @@ package auaddress
 
 import (
 	"errors"
-	"regexp"
 	"strings"
 )
 
@@ -110,23 +109,15 @@ func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
 
 	addr.RawLines = lines
 
-	if err := p.parseLastLine(addr, lines); err != nil {
+	tokens, err := lexAddress(normalised)
+	if err == nil {
+		err = parseAddressTokens(addr, tokens, normalised)
+	}
+	if err != nil {
 		if p.strict {
 			return addr, err
 		}
 		addr.Errors = append(addr.Errors, err)
-	}
-
-	if len(lines) >= 2 {
-		p.parseDeliveryLine(addr, lines[len(lines)-2])
-	} else if p.strict {
-		return addr, ErrNoDeliveryLine
-	} else {
-		addr.Errors = append(addr.Errors, ErrNoDeliveryLine)
-	}
-
-	if len(lines) >= 3 {
-		addr.NameLines = lines[:len(lines)-2]
 	}
 
 	return addr, nil
@@ -143,10 +134,22 @@ func normalise(raw string) string {
 	return s
 }
 
-var multiSpaceRegex = regexp.MustCompile(`[ \t]+`)
-
 func collapseSpaces(s string) string {
-	return multiSpaceRegex.ReplaceAllString(s, " ")
+	var result strings.Builder
+	result.Grow(len(s))
+	spacePending := false
+	for _, ch := range s {
+		if ch == ' ' || ch == '\t' {
+			spacePending = true
+			continue
+		}
+		if spacePending && result.Len() > 0 && ch != '\n' {
+			result.WriteByte(' ')
+		}
+		spacePending = false
+		result.WriteRune(ch)
+	}
+	return result.String()
 }
 
 func splitLines(s string) []string {
@@ -168,157 +171,6 @@ func trimPunctuation(s string) string {
 	s = strings.TrimLeft(s, ".,;:-–—")
 	s = strings.TrimRight(s, ".,;:-–—")
 	return strings.TrimSpace(s)
-}
-
-var postcodeRegex = regexp.MustCompile(`^\d{4}$`)
-
-func (p *Parser) parseLastLine(addr *ParsedAddress, lines []string) error {
-	if len(lines) == 0 {
-		return ErrInvalidAddress
-	}
-
-	lastLine := strings.ToUpper(lines[len(lines)-1])
-	tokens := strings.Fields(lastLine)
-
-	if len(tokens) < 3 {
-		return ErrInvalidAddress
-	}
-
-	postcode := tokens[len(tokens)-1]
-	if !postcodeRegex.MatchString(postcode) {
-		return ErrNoPostcode
-	}
-	addr.Postcode = postcode
-
-	state := tokens[len(tokens)-2]
-	if _, ok := validStates[state]; !ok {
-		return ErrNoState
-	}
-	addr.State = state
-
-	localityTokens := tokens[:len(tokens)-2]
-	addr.Locality = strings.Join(localityTokens, " ")
-
-	return nil
-}
-
-func (p *Parser) parseDeliveryLine(addr *ParsedAddress, line string) {
-	line = strings.TrimSpace(line)
-	upperLine := strings.ToUpper(line)
-
-	if p.parsePoBox(addr, upperLine) {
-		return
-	}
-
-	p.parseStreetAddress(addr, line)
-}
-
-var poBoxPatterns = []struct {
-	pattern *regexp.Regexp
-	boxType string
-}{
-	{regexp.MustCompile(`(?i)^(LOCKED\s+BAG)\s+(.+)$`), "LOCKED BAG"},
-	{regexp.MustCompile(`(?i)^(PRIVATE\s+BAG)\s+(.+)$`), "PRIVATE BAG"},
-	{regexp.MustCompile(`(?i)^(GPO\s+BOX)\s+(.+)$`), "GPO BOX"},
-	{regexp.MustCompile(`(?i)^(G\.?P\.?O\.?\s*BOX)\s+(.+)$`), "GPO BOX"},
-	{regexp.MustCompile(`(?i)^(PO\s+BOX)\s+(.+)$`), "PO BOX"},
-	{regexp.MustCompile(`(?i)^(P\.?O\.?\s*BOX)\s+(.+)$`), "PO BOX"},
-	{regexp.MustCompile(`(?i)^(REPLY\s+PAID)\s+(.+)$`), "REPLY PAID"},
-	{regexp.MustCompile(`(?i)^(RMB)\s+(.+)$`), "RMB"},
-	{regexp.MustCompile(`(?i)^(CMB)\s+(.+)$`), "CMB"},
-	{regexp.MustCompile(`(?i)^(RSD)\s+(.+)$`), "RSD"},
-	{regexp.MustCompile(`(?i)^(MS)\s+(.+)$`), "MS"},
-	{regexp.MustCompile(`(?i)^(CMA)\s+(.+)$`), "CMA"},
-	{regexp.MustCompile(`(?i)^(CPA)\s+(.+)$`), "CPA"},
-	{regexp.MustCompile(`(?i)^(CARE\s+PO)\s+(.+)$`), "CARE PO"},
-}
-
-func (p *Parser) parsePoBox(addr *ParsedAddress, line string) bool {
-	for _, pattern := range poBoxPatterns {
-		matches := pattern.pattern.FindStringSubmatch(line)
-		if matches != nil {
-			addr.IsPoBox = true
-			addr.PoBoxType = pattern.boxType
-			addr.PoBoxNumber = strings.TrimSpace(matches[2])
-			return true
-		}
-	}
-	return false
-}
-
-var (
-	unitSlashNumberRegex = regexp.MustCompile(`^(\d+[A-Za-z]?)\s*/\s*(\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?)(.*)$`)
-	unitPrefixRegex      = regexp.MustCompile(`(?i)^(UNIT|FLAT|APT|APARTMENT|VILLA|LOT|SHOP|SH|SUITE|STE|ROOM|RM|OFFICE|OFF|FACTORY|FY|WAREHOUSE|WE|SHED|SD|KIOSK|KSK|TOWNHOUSE|TNHS|PENTHOUSE|PTHS)\s+(\d+[A-Za-z]?)\s*[,]?\s*(.*)$`)
-	levelPrefixRegex     = regexp.MustCompile(`(?i)^(LEVEL|LVL|L|FLOOR|FL)\s+(\d+[A-Za-z]?|G|B|M|P|LG|UG)\s*[,]?\s*(.*)$`)
-	streetNumberRegex    = regexp.MustCompile(`^(\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?)\s+(.+)$`)
-)
-
-func (p *Parser) parseStreetAddress(addr *ParsedAddress, line string) {
-	remaining := line
-
-	if matches := unitSlashNumberRegex.FindStringSubmatch(remaining); matches != nil {
-		addr.Unit = strings.ToUpper(matches[1])
-		addr.StreetNumber = strings.ToUpper(strings.ReplaceAll(matches[2], " ", ""))
-		remaining = strings.TrimSpace(matches[3])
-	} else {
-		if matches := unitPrefixRegex.FindStringSubmatch(remaining); matches != nil {
-			unitType := strings.ToUpper(matches[1])
-			if normalised, ok := unitTypes[unitType]; ok {
-				addr.Unit = normalised + " " + strings.ToUpper(matches[2])
-			} else {
-				addr.Unit = unitType + " " + strings.ToUpper(matches[2])
-			}
-			remaining = strings.TrimSpace(matches[3])
-		}
-
-		if matches := levelPrefixRegex.FindStringSubmatch(remaining); matches != nil {
-			levelType := strings.ToUpper(matches[1])
-			if normalised, ok := levelTypes[levelType]; ok {
-				addr.Level = normalised + " " + strings.ToUpper(matches[2])
-			} else {
-				addr.Level = levelType + " " + strings.ToUpper(matches[2])
-			}
-			remaining = strings.TrimSpace(matches[3])
-		}
-	}
-
-	if addr.StreetNumber == "" {
-		if matches := streetNumberRegex.FindStringSubmatch(remaining); matches != nil {
-			addr.StreetNumber = strings.ToUpper(strings.ReplaceAll(matches[1], " ", ""))
-			remaining = strings.TrimSpace(matches[2])
-		}
-	}
-
-	p.parseStreetNameAndType(addr, remaining)
-}
-
-func (p *Parser) parseStreetNameAndType(addr *ParsedAddress, s string) {
-	tokens := strings.Fields(strings.ToUpper(s))
-	if len(tokens) == 0 {
-		return
-	}
-
-	if len(tokens) >= 2 {
-		lastToken := tokens[len(tokens)-1]
-		if _, ok := streetSuffixes[lastToken]; ok {
-			if normalised, ok := streetSuffixes[lastToken]; ok {
-				addr.StreetSuffix = normalised
-			}
-			tokens = tokens[:len(tokens)-1]
-		}
-	}
-
-	if len(tokens) >= 1 {
-		lastToken := tokens[len(tokens)-1]
-		if normalised, ok := streetTypes[lastToken]; ok {
-			addr.StreetType = normalised
-			tokens = tokens[:len(tokens)-1]
-		}
-	}
-
-	if len(tokens) > 0 {
-		addr.StreetName = strings.Join(tokens, " ")
-	}
 }
 
 func (a *ParsedAddress) Format() string {
