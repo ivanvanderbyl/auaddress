@@ -38,8 +38,13 @@ func TestLocalityStateMaskMergesDuplicateNames(t *testing.T) {
 }
 
 func TestLocalityIndexHasOfficialData(t *testing.T) {
-	if len(localityStates) < 13_000 || len(localityStates) > 15_000 {
+	if len(localityStates) < 20_000 || len(localityStates) > 25_000 {
 		t.Errorf("unexpected locality index size: %d", len(localityStates))
+	}
+	for locality, state := range map[string]string{"BRISBANE": "QLD", "CANBERRA": "ACT"} {
+		if !localityStates[locality].contains(state) {
+			t.Errorf("expected %s locality mask to contain %s", locality, state)
+		}
 	}
 	if maxLocalityTokens < 3 {
 		t.Errorf("maximum locality token count is unexpectedly small: %d", maxLocalityTokens)

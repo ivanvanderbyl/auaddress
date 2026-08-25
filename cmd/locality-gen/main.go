@@ -1,59 +1,54 @@
 package main
 
 import (
-	"encoding/json"
+	"archive/zip"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"go/format"
+	"io"
 	"net/http"
-	"net/url"
 	"os"
+	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const (
-	defaultEndpoint = "https://geo.abs.gov.au/arcgis/rest/services/ASGS2021/SAL/MapServer/0/query"
-	pageSize        = 2000
-)
+const defaultSource = "https://data.gov.au/data/dataset/19432f89-dc3a-4ef3-b943-5326ef1dbecc/resource/b023544a-5836-4d43-b6d8-da2f73e8d2bf/download/g-naf_aug26_allstates_gda2020_psv_110.zip"
 
 var stateBits = map[string]uint8{
-	"1": 1 << 0, // NSW
-	"2": 1 << 1, // VIC
-	"3": 1 << 2, // QLD
-	"4": 1 << 3, // SA
-	"5": 1 << 4, // WA
-	"6": 1 << 5, // TAS
-	"8": 1 << 6, // ACT
-	"7": 1 << 7, // NT
-}
-
-type queryResponse struct {
-	Features []struct {
-		Attributes struct {
-			Name      string `json:"sal_name_2021"`
-			StateCode string `json:"state_code_2021"`
-		} `json:"attributes"`
-	} `json:"features"`
-	Error *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	"NSW": 1 << 0,
+	"VIC": 1 << 1,
+	"QLD": 1 << 2,
+	"SA":  1 << 3,
+	"WA":  1 << 4,
+	"TAS": 1 << 5,
+	"ACT": 1 << 6,
+	"NT":  1 << 7,
 }
 
 func main() {
 	output := flag.String("output", "localities_generated.go", "generated Go file")
-	endpoint := flag.String("endpoint", defaultEndpoint, "ABS SAL ArcGIS query endpoint")
+	source := flag.String("source", defaultSource, "G-NAF PSV zip path or HTTP URL")
 	flag.Parse()
 
-	localities, err := fetchLocalities(*endpoint)
+	archive, closer, err := openZipArchive(*source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if closer != nil {
+		defer closer.Close()
+	}
 
-	generated, err := renderLocalities(localities, *endpoint)
+	localities, err := readGNAFLocalities(archive)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	generated, err := renderLocalities(localities, *source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -64,74 +59,123 @@ func main() {
 	}
 }
 
-func fetchLocalities(endpoint string) (map[string]uint8, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	localities := make(map[string]uint8, 15_000)
-
-	for offset := 0; ; offset += pageSize {
-		query, err := url.Parse(endpoint)
+func openZipArchive(source string) (*zip.Reader, io.Closer, error) {
+	if strings.HasPrefix(source, "https://") || strings.HasPrefix(source, "http://") {
+		reader, size, err := newHTTPRangeReader(source)
 		if err != nil {
-			return nil, fmt.Errorf("parse endpoint: %w", err)
+			return nil, nil, err
 		}
-		values := query.Query()
-		values.Set("where", "1=1")
-		values.Set("outFields", "sal_name_2021,state_code_2021")
-		values.Set("returnGeometry", "false")
-		values.Set("orderByFields", "objectid")
-		values.Set("resultOffset", fmt.Sprint(offset))
-		values.Set("resultRecordCount", fmt.Sprint(pageSize))
-		values.Set("f", "json")
-		query.RawQuery = values.Encode()
-
-		response, err := client.Get(query.String())
+		archive, err := zip.NewReader(reader, size)
 		if err != nil {
-			return nil, fmt.Errorf("fetch locality page at offset %d: %w", offset, err)
+			return nil, nil, fmt.Errorf("open remote G-NAF zip: %w", err)
 		}
-
-		var page queryResponse
-		decodeErr := json.NewDecoder(response.Body).Decode(&page)
-		closeErr := response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("fetch locality page at offset %d: %s", offset, response.Status)
-		}
-		if decodeErr != nil {
-			return nil, fmt.Errorf("decode locality page at offset %d: %w", offset, decodeErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("close locality response at offset %d: %w", offset, closeErr)
-		}
-		if page.Error != nil {
-			return nil, fmt.Errorf("ABS query error %d: %s", page.Error.Code, page.Error.Message)
-		}
-
-		for _, feature := range page.Features {
-			bit, supported := stateBits[feature.Attributes.StateCode]
-			if !supported {
-				continue
-			}
-			name := normalizeLocalityName(feature.Attributes.Name)
-			if name != "" {
-				localities[name] |= bit
-			}
-		}
-
-		if len(page.Features) < pageSize {
-			break
-		}
+		return archive, nil, nil
 	}
 
+	file, err := os.Open(source)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open G-NAF zip: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, fmt.Errorf("stat G-NAF zip: %w", err)
+	}
+	archive, err := zip.NewReader(file, info.Size())
+	if err != nil {
+		file.Close()
+		return nil, nil, fmt.Errorf("open G-NAF zip: %w", err)
+	}
+	return archive, file, nil
+}
+
+func readGNAFLocalities(archive *zip.Reader) (map[string]uint8, error) {
+	localities := make(map[string]uint8, 18_000)
+	filesRead := 0
+
+	for _, file := range archive.File {
+		filename := path.Base(file.Name)
+		state, nameColumn, ok := localityFile(filename)
+		if !ok {
+			continue
+		}
+
+		contents, err := file.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open %s: %w", file.Name, err)
+		}
+		err = readLocalityPSV(contents, nameColumn, stateBits[state], localities)
+		closeErr := contents.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", file.Name, err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close %s: %w", file.Name, closeErr)
+		}
+		filesRead++
+	}
+
+	if filesRead == 0 {
+		return nil, fmt.Errorf("no G-NAF locality PSV files found")
+	}
 	return localities, nil
 }
 
-func normalizeLocalityName(name string) string {
-	name = strings.TrimSpace(name)
-	if qualifier := strings.LastIndex(name, " ("); qualifier >= 0 && strings.HasSuffix(name, ")") {
-		name = name[:qualifier]
+func localityFile(filename string) (string, string, bool) {
+	for state := range stateBits {
+		switch filename {
+		case state + "_LOCALITY_psv.psv":
+			return state, "LOCALITY_NAME", true
+		case state + "_LOCALITY_ALIAS_psv.psv":
+			return state, "NAME", true
+		}
 	}
+	return "", "", false
+}
+
+func readLocalityPSV(reader io.Reader, nameColumn string, bit uint8, localities map[string]uint8) error {
+	records := csv.NewReader(reader)
+	records.Comma = '|'
+	records.FieldsPerRecord = -1
+	header, err := records.Read()
+	if err != nil {
+		return fmt.Errorf("read header: %w", err)
+	}
+
+	nameIndex := -1
+	for index, column := range header {
+		if strings.EqualFold(strings.TrimSpace(column), nameColumn) {
+			nameIndex = index
+			break
+		}
+	}
+	if nameIndex < 0 {
+		return fmt.Errorf("missing %s column", nameColumn)
+	}
+
+	for {
+		record, err := records.Read()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if nameIndex >= len(record) {
+			continue
+		}
+		name := normalizeLocalityName(record[nameIndex])
+		if name != "" {
+			localities[name] |= bit
+		}
+	}
+}
+
+func normalizeLocalityName(name string) string {
 	return strings.ToUpper(strings.Join(strings.Fields(name), " "))
 }
 
-func renderLocalities(localities map[string]uint8, endpoint string) ([]byte, error) {
+func renderLocalities(localities map[string]uint8, sourceName string) ([]byte, error) {
 	names := make([]string, 0, len(localities))
 	maxTokens := 0
 	for name := range localities {
@@ -145,8 +189,8 @@ func renderLocalities(localities map[string]uint8, endpoint string) ([]byte, err
 	var source strings.Builder
 	source.WriteString("// Code generated by cmd/locality-gen; DO NOT EDIT.\n")
 	source.WriteString("// Source: ")
-	source.WriteString(endpoint)
-	source.WriteString(" (ABS ASGS Edition 3, SAL 2021)\n\n")
+	source.WriteString(sourceName)
+	source.WriteString(" (Geoscape G-NAF August 2026, GDA2020 PSV)\n\n")
 	source.WriteString("package auaddress\n\n")
 	fmt.Fprintf(&source, "const maxLocalityTokens = %d\n\n", maxTokens)
 	source.WriteString("var localityStates = map[string]stateMask{\n")
@@ -160,4 +204,47 @@ func renderLocalities(localities map[string]uint8, endpoint string) ([]byte, err
 		return nil, fmt.Errorf("format generated localities: %w", err)
 	}
 	return formatted, nil
+}
+
+type httpRangeReader struct {
+	client *http.Client
+	url    string
+}
+
+func newHTTPRangeReader(url string) (*httpRangeReader, int64, error) {
+	client := &http.Client{Timeout: 60 * time.Second}
+	response, err := client.Head(url)
+	if err != nil {
+		return nil, 0, fmt.Errorf("inspect remote G-NAF zip: %w", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("inspect remote G-NAF zip: %s", response.Status)
+	}
+	size, err := strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
+	if err != nil || size <= 0 {
+		return nil, 0, fmt.Errorf("inspect remote G-NAF zip: invalid Content-Length")
+	}
+	return &httpRangeReader{client: client, url: url}, size, nil
+}
+
+func (reader *httpRangeReader) ReadAt(buffer []byte, offset int64) (int, error) {
+	request, err := http.NewRequest(http.MethodGet, reader.url, nil)
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, offset+int64(len(buffer))-1))
+	response, err := reader.client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusPartialContent {
+		return 0, fmt.Errorf("range %d-%d: %s", offset, offset+int64(len(buffer))-1, response.Status)
+	}
+	n, err := io.ReadFull(response.Body, buffer)
+	if err == io.ErrUnexpectedEOF {
+		err = io.EOF
+	}
+	return n, err
 }
