@@ -461,6 +461,27 @@ func TestIsValid(t *testing.T) {
 			t.Error("expected invalid address due to invalid state")
 		}
 	})
+
+	t.Run("street and locality are valid without state or postcode", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street, Richmond")
+		if !addr.IsValid() {
+			t.Errorf("expected locality-terminated partial address to be valid: %v", addr.Errors)
+		}
+	})
+
+	t.Run("postal delivery and locality are valid without state or postcode", func(t *testing.T) {
+		addr, _ := Parse("PO Box 42, Richmond")
+		if !addr.IsValid() {
+			t.Errorf("expected locality-terminated postal address to be valid: %v", addr.Errors)
+		}
+	})
+
+	t.Run("delivery without locality is invalid", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street")
+		if addr.IsValid() {
+			t.Error("expected address without locality to be invalid")
+		}
+	})
 }
 
 func TestHasDeliveryPoint(t *testing.T) {
@@ -475,6 +496,20 @@ func TestHasDeliveryPoint(t *testing.T) {
 		addr, _ := Parse("Company\nPO Box 1234\nSYDNEY NSW 2000")
 		if !addr.HasDeliveryPoint() {
 			t.Error("expected delivery point for PO Box")
+		}
+	})
+
+	t.Run("mixed canonical deliveries have delivery point", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street, PO Box 42, Richmond")
+		if !addr.HasDeliveryPoint() {
+			t.Error("expected mixed canonical deliveries to have a delivery point")
+		}
+	})
+
+	t.Run("manually constructed legacy street has delivery point", func(t *testing.T) {
+		addr := &ParsedAddress{StreetName: "MAIN"}
+		if !addr.HasDeliveryPoint() {
+			t.Error("expected legacy street fields to remain supported")
 		}
 	})
 }

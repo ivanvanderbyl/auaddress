@@ -296,9 +296,9 @@ func (a *ParsedAddress) FormatLocalityLine() string {
 }
 
 func (a *ParsedAddress) IsValid() bool {
-	return len(a.Errors) == 0 && a.Postcode != "" && a.State != ""
+	return len(a.Errors) == 0 && a.Locality != "" && a.HasDeliveryPoint()
 }
 
 func (a *ParsedAddress) HasDeliveryPoint() bool {
-	return a.IsPoBox || a.StreetNumber != "" || a.StreetName != ""
+	return len(a.DeliveryPoints) > 0 || a.IsPoBox || a.StreetNumber != "" || a.StreetName != ""
 }
