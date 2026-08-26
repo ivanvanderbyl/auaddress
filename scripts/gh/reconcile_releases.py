@@ -368,6 +368,14 @@ class GitHub:
             raise ReleaseError("GitHub returned an invalid workflow-run response.")
         return result
 
+    def workflow(self, workflow_id: int) -> Mapping[str, object]:
+        result = self.api(
+            f"repos/{self.repository}/actions/workflows/{workflow_id}"
+        )
+        if not isinstance(result, dict):
+            raise ReleaseError("GitHub returned an invalid workflow response.")
+        return result
+
     def pull_request(self, number: int) -> PullRequest:
         result = self.api(f"repos/{self.repository}/pulls/{number}")
         if not isinstance(result, dict):
@@ -560,8 +568,17 @@ def reconcile(
     workflow_run = github.workflow_run(workflow_run_id)
     if workflow_run.get("event") != "pull_request_target":
         raise ReleaseError("Upstream workflow run was not a pull_request_target run.")
-    if workflow_run.get("name") != "Observe merged PR":
+    workflow_id = workflow_run.get("workflow_id")
+    if not isinstance(workflow_id, int) or isinstance(workflow_id, bool):
+        raise ReleaseError("Upstream workflow run has no valid workflow identity.")
+    workflow = github.workflow(workflow_id)
+    if workflow.get("id") != workflow_id:
+        raise ReleaseError("Upstream workflow identity does not match its run.")
+    if workflow.get("name") != "Observe merged PR":
         raise ReleaseError("Upstream workflow run has an unexpected workflow name.")
+    workflow_definition_path = workflow.get("path")
+    if workflow_definition_path != ".github/workflows/observe-merged-pr.yml":
+        raise ReleaseError("Upstream workflow has an unexpected workflow path.")
     workflow_path = workflow_run.get("path")
     if not isinstance(workflow_path, str) or workflow_path.split("@", 1)[0] != (
         ".github/workflows/observe-merged-pr.yml"
