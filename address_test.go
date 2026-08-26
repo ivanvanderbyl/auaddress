@@ -852,6 +852,24 @@ func TestParseAllOptionalTailsBeforeAnotherAddress(t *testing.T) {
 			secondState:    "VIC",
 			secondPostcode: "3000",
 		},
+		{
+			name:        "four digit next street number after state",
+			input:       "123 Main Street Sydney NSW 1000 Queen Street Melbourne VIC",
+			firstState:  "NSW",
+			secondState: "VIC",
+		},
+		{
+			name:  "four digit next street number after locality",
+			input: "123 Main Street Sydney 1000 Queen Street Melbourne",
+		},
+		{
+			name:           "postcode before four digit next street number",
+			input:          "123 Main Street Sydney NSW 2000 1000 Queen Street Melbourne VIC 3000",
+			firstState:     "NSW",
+			firstPostcode:  "2000",
+			secondState:    "VIC",
+			secondPostcode: "3000",
+		},
 	}
 
 	for _, tt := range tests {

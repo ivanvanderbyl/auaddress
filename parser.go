@@ -172,6 +172,9 @@ func parseSequenceTail(tokens []token, start int, locality localityMatch) (addre
 
 	current = tokens[position]
 	if isPostcode(current.value) {
+		if postcodeStartsNextAddress(tokens, position) {
+			return tail, position
+		}
 		tail.postcode = current.value
 		return tail, skipSoftTokens(tokens, position+1)
 	}
@@ -182,6 +185,17 @@ func parseSequenceTail(tokens []token, start int, locality localityMatch) (addre
 		tail.err = ErrNoPostcode
 	}
 	return tail, position
+}
+
+func postcodeStartsNextAddress(tokens []token, position int) bool {
+	afterPostcode := skipSoftTokens(tokens, position+1)
+	if !isEOF(tokens, afterPostcode) {
+		if remainder, ok := parseAddressSegmentAt(tokens, afterPostcode); ok && remainder.tail.err == nil {
+			return false
+		}
+	}
+	next, ok := parseAddressSegmentAt(tokens, position)
+	return ok && next.tail.err == nil && len(next.points) == 1 && next.points[0].Kind == DeliveryPointStreet
 }
 
 func sequenceTailCanEnd(tokens []token, segment addressSegment) bool {
