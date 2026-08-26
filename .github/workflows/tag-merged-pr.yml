@@ -1,0 +1,169 @@
+name: Tag merged PRs
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Fetch release tags
+        run: git fetch --force --tags origin
+
+      - name: Calculate proposed version
+        id: version
+        run: python3 scripts/gh/determine_highest_version_prefix.py
+
+      - name: Summarize proposed release
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Proposed release tag: \`v${NEXT_VERSION}\` if this pull request merges to \`main\`." >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Check out merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch release tags
+        run: git fetch --force --tags origin
+
+      - name: Calculate release tag
+        id: release
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stable_tags() {
+            grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || true
+          }
+
+          latest_stable_tag() {
+            stable_tags | sort -V | tail -n 1
+          }
+
+          write_outputs() {
+            local previous_tag="$1"
+            local next_tag="$2"
+            local create_tag="$3"
+
+            {
+              echo "previous_tag=$previous_tag"
+              echo "next_tag=$next_tag"
+              echo "create_tag=$create_tag"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          merge_sha="$(git rev-parse "${MERGE_SHA}^{commit}")"
+          existing_tag="$(git tag --points-at "$merge_sha" --list 'v*' | stable_tags | latest_stable_tag)"
+
+          if [[ -n "$existing_tag" ]]; then
+            if ! first_parent="$(git rev-parse "${merge_sha}^" 2>/dev/null)"; then
+              echo "Cannot determine the release before $existing_tag: merge commit $merge_sha has no parent." >&2
+              exit 1
+            fi
+
+            previous_tag="$(git tag --merged "$first_parent" --list 'v*' | stable_tags | latest_stable_tag)"
+            if [[ -z "$previous_tag" ]]; then
+              echo "Cannot determine the release before $existing_tag from the first parent of $merge_sha." >&2
+              exit 1
+            fi
+
+            echo "Reusing stable tag $existing_tag already pointing at merge commit $merge_sha."
+            write_outputs "$previous_tag" "$existing_tag" false
+            exit 0
+          fi
+
+          previous_tag="$(git tag --merged "$merge_sha" --list 'v*' | stable_tags | latest_stable_tag)"
+          if [[ -z "$previous_tag" ]]; then
+            echo "Cannot create a release: no stable vMAJOR.MINOR.PATCH tag is an ancestor of $merge_sha." >&2
+            exit 1
+          fi
+
+          version="$(python3 scripts/gh/determine_highest_version_prefix.py)"
+          next_tag="v${version}"
+
+          if git show-ref --verify --quiet "refs/tags/$next_tag"; then
+            tag_commit="$(git rev-list -n 1 "$next_tag")"
+            if [[ "$tag_commit" != "$merge_sha" ]]; then
+              echo "Cannot create $next_tag: the local tag points at $tag_commit, not merge commit $merge_sha." >&2
+              exit 1
+            fi
+
+            echo "Reusing $next_tag, which appeared locally during version calculation."
+            write_outputs "$previous_tag" "$next_tag" false
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$next_tag" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/$next_tag:refs/tags/$next_tag"
+            tag_commit="$(git rev-list -n 1 "$next_tag")"
+            if [[ "$tag_commit" != "$merge_sha" ]]; then
+              echo "Cannot create $next_tag: the remote tag points at $tag_commit, not merge commit $merge_sha." >&2
+              exit 1
+            fi
+
+            echo "Reusing $next_tag, which appeared remotely during version calculation."
+            write_outputs "$previous_tag" "$next_tag" false
+            exit 0
+          fi
+
+          write_outputs "$previous_tag" "$next_tag" true
+
+      - name: Create and push tag
+        if: steps.release.outputs.create_tag == 'true'
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          NEXT_TAG: ${{ steps.release.outputs.next_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$NEXT_TAG" "$MERGE_SHA" --message "Release $NEXT_TAG"
+          git push origin "refs/tags/$NEXT_TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_TAG: ${{ steps.release.outputs.next_tag }}
+          PREVIOUS_TAG: ${{ steps.release.outputs.previous_tag }}
+        run: |
+          if gh release view "$NEXT_TAG" >/dev/null 2>&1; then
+            echo "GitHub release $NEXT_TAG already exists."
+            exit 0
+          fi
+
+          gh release create "$NEXT_TAG" \
+            --verify-tag \
+            --title "$NEXT_TAG" \
+            --generate-notes \
+            --notes-start-tag "$PREVIOUS_TAG"
