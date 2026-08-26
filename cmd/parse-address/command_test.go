@@ -58,6 +58,47 @@ func TestRunParse(t *testing.T) {
 	}
 }
 
+func TestRunParseMultiple(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "actual newline",
+			input: "Level 4, 54 Wellington St, Collingwood\nPO Box 234, Melbourne",
+		},
+		{
+			name:  "literal newline",
+			input: "Level 4, 54 Wellington St, Collingwood\\nPO Box 234, Melbourne",
+		},
+	}
+	want := "L 4 54 WELLINGTON ST\nCOLLINGWOOD\n\nPO BOX 234\nMELBOURNE\n"
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(
+				context.Background(),
+				[]string{"parse-address", tt.input},
+				&stdout,
+				&stderr,
+			)
+
+			if code != 0 {
+				t.Fatalf("exit code: want 0, got %d; stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != want {
+				t.Errorf("stdout:\nwant: %q\ngot:  %q", want, stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr: want empty, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunParseJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -67,17 +108,26 @@ func TestRunParseJSON(t *testing.T) {
 		{
 			name: "flag after address",
 			args: []string{"parse-address", "Level 4, 54 Wellington Street, Collingwood", "--json"},
-			want: `{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}` + "\n",
+			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
 		},
 		{
 			name: "flag before address",
 			args: []string{"parse-address", "--json", "Level 4, 54 Wellington Street, Collingwood"},
-			want: `{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}` + "\n",
+			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
 		},
 		{
 			name: "postal delivery",
 			args: []string{"parse-address", "PO Box 42, Richmond", "--json"},
-			want: `{"deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"42"}],"locality":"RICHMOND"}` + "\n",
+			want: `[{"deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"42"}],"locality":"RICHMOND"}]` + "\n",
+		},
+		{
+			name: "multiple addresses",
+			args: []string{
+				"parse-address",
+				"Level 4, 54 Wellington St, Collingwood\\nPO Box 234, Melbourne",
+				"--json",
+			},
+			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"},{"deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"234"}],"locality":"MELBOURNE"}]` + "\n",
 		},
 	}
 

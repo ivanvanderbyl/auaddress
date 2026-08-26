@@ -85,14 +85,20 @@ func parseAction(stdout io.Writer) cli.ActionFunc {
 			return fmt.Errorf("expected one address")
 		}
 
-		address, err := parseStrict(command.Args().First())
+		raw := strings.ReplaceAll(command.Args().First(), `\n`, "\n")
+		addresses, err := parseAllStrict(raw)
 		if err != nil {
 			return err
 		}
 		if command.Bool("json") {
-			return json.NewEncoder(stdout).Encode(newAddressOutput(address))
+			return json.NewEncoder(stdout).Encode(newAddressOutputs(addresses))
 		}
-		_, err = fmt.Fprintln(stdout, address.Format())
+
+		formatted := make([]string, len(addresses))
+		for i, address := range addresses {
+			formatted[i] = address.Format()
+		}
+		_, err = fmt.Fprintln(stdout, strings.Join(formatted, "\n\n"))
 		return err
 	}
 }
@@ -136,6 +142,18 @@ func writeError(writer io.Writer, jsonOutput bool, err error) {
 
 func parseStrict(raw string) (*auaddress.ParsedAddress, error) {
 	return auaddress.NewParser(auaddress.WithStrict(true)).Parse(raw)
+}
+
+func parseAllStrict(raw string) ([]*auaddress.ParsedAddress, error) {
+	return auaddress.NewParser(auaddress.WithStrict(true)).ParseAll(raw)
+}
+
+func newAddressOutputs(addresses []*auaddress.ParsedAddress) []addressOutput {
+	outputs := make([]addressOutput, len(addresses))
+	for i, address := range addresses {
+		outputs[i] = newAddressOutput(address)
+	}
+	return outputs
 }
 
 func newAddressOutput(address *auaddress.ParsedAddress) addressOutput {
