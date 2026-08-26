@@ -262,7 +262,8 @@ class ReconcileTest(unittest.TestCase):
         self.github = mock.Mock()
         self.github.workflow_run.return_value = {
             "event": "pull_request_target",
-            "name": "Observe merged PR",
+            "name": "Release PR #10",
+            "workflow_id": 987,
             "path": ".github/workflows/observe-merged-pr.yml@main",
             "display_title": "Release PR #10",
             "conclusion": "success",
@@ -271,6 +272,12 @@ class ReconcileTest(unittest.TestCase):
             "head_branch": "main",
             "head_sha": "base",
             "head_repository": {"full_name": "owner/repository"},
+        }
+        self.github.workflow.return_value = {
+            "id": 987,
+            "name": "Observe merged PR",
+            "path": ".github/workflows/observe-merged-pr.yml",
+            "state": "active",
         }
 
     def reconcile(self):
@@ -349,7 +356,7 @@ class ReconcileTest(unittest.TestCase):
             self.reconcile()
 
     def test_wrong_workflow_name_fails(self) -> None:
-        self.github.workflow_run.return_value["name"] = "Preview release tag"
+        self.github.workflow.return_value["name"] = "Preview release tag"
         with self.assertRaisesRegex(ReleaseError, "workflow name"):
             self.reconcile()
 
@@ -546,6 +553,20 @@ class GitRepositoryTest(unittest.TestCase):
 
 
 class GitHubClientTest(unittest.TestCase):
+    def test_workflow_reads_the_workflow_identity_endpoint(self) -> None:
+        github = GitHub("owner/repository")
+        with mock.patch.object(
+            github,
+            "api",
+            return_value={"id": 987, "name": "Observe merged PR"},
+        ) as api:
+            self.assertEqual(
+                github.workflow(987),
+                {"id": 987, "name": "Observe merged PR"},
+            )
+
+        api.assert_called_once_with("repos/owner/repository/actions/workflows/987")
+
     def test_paginated_api_flattens_pages(self) -> None:
         github = GitHub("owner/repository")
         with mock.patch.object(github, "_run", return_value='[[{"id": 1}], [{"id": 2}]]'):
