@@ -26,6 +26,13 @@ func TestRecognizeStreet(t *testing.T) {
 			},
 		},
 		{
+			name:  "compact level",
+			input: "L4 54 Wellington Street",
+			expected: StreetDelivery{
+				Level: "L 4", StreetNumber: "54", StreetName: "WELLINGTON", StreetType: "ST",
+			},
+		},
+		{
 			name:  "range and suffix",
 			input: "10-12 King George Road North",
 			expected: StreetDelivery{

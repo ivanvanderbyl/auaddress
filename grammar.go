@@ -119,6 +119,9 @@ func recognizeStreet(tokens []token, start, limit int) (DeliveryPoint, int, bool
 				delivery.Level = levelType
 				position = next
 			}
+		} else if level, next, matched := matchCompactLevel(tokens, position, streetLimit); matched {
+			delivery.Level = level
+			position = next
 		}
 
 		streetNumber, next, numberOK := consumeAtom(tokens, position, streetLimit)
@@ -164,6 +167,42 @@ func recognizeStreet(tokens []token, start, limit int) (DeliveryPoint, int, bool
 	delivery.StreetName = strings.Join(name, " ")
 
 	return DeliveryPoint{Kind: DeliveryPointStreet, Street: delivery}, streetLimit, true
+}
+
+func matchCompactLevel(tokens []token, start, limit int) (string, int, bool) {
+	position := skipSoftTokensBefore(tokens, start, limit)
+	if position >= limit || tokens[position].kind != tokenNumberish {
+		return "", start, false
+	}
+
+	value := tokens[position].value
+	bestPrefix := ""
+	bestLevelType := ""
+	for keyword, levelType := range levelTypes {
+		keyword = normalizeAddressAtom(strings.Join(strings.Fields(keyword), " "))
+		if strings.Contains(keyword, " ") || !levelNeedsIdentifier(levelType) {
+			continue
+		}
+		identifier := strings.TrimPrefix(value, keyword)
+		if identifier == value || identifier == "" || !isNumberish(identifier) {
+			continue
+		}
+		if len(keyword) > len(bestPrefix) {
+			bestPrefix = keyword
+			bestLevelType = levelType
+		}
+	}
+	if bestPrefix == "" {
+		return "", start, false
+	}
+
+	streetNumber, _, ok := consumeAtom(tokens, position+1, limit)
+	if !ok || streetNumber.kind != tokenNumberish {
+		return "", start, false
+	}
+
+	identifier := strings.TrimPrefix(value, bestPrefix)
+	return bestLevelType + " " + identifier, position + 1, true
 }
 
 func recognizeDeliverySequence(tokens []token, start, limit int) ([]DeliveryPoint, int, bool) {
