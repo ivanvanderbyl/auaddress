@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"go/format"
@@ -17,6 +18,7 @@ import (
 )
 
 const defaultSource = "https://data.gov.au/data/dataset/19432f89-dc3a-4ef3-b943-5326ef1dbecc/resource/b023544a-5836-4d43-b6d8-da2f73e8d2bf/download/g-naf_aug26_allstates_gda2020_psv_110.zip"
+const gnafPackageEndpoint = "https://data.gov.au/data/api/3/action/package_show?id=geocoded-national-address-file-g-naf"
 
 var stateBits = map[string]uint8{
 	"NSW": 1 << 0,
@@ -34,7 +36,17 @@ func main() {
 	source := flag.String("source", defaultSource, "G-NAF PSV zip path or HTTP URL")
 	flag.Parse()
 
-	archive, closer, err := openZipArchive(*source)
+	resolvedSource := *source
+	if resolvedSource == "latest" {
+		var err error
+		resolvedSource, err = resolveLatestGNAF(&http.Client{Timeout: 60 * time.Second}, gnafPackageEndpoint)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+
+	archive, closer, err := openZipArchive(resolvedSource)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -48,7 +60,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	generated, err := renderLocalities(localities, *source)
+	generated, err := renderLocalities(localities, resolvedSource)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -57,6 +69,69 @@ func main() {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", *output, err)
 		os.Exit(1)
 	}
+}
+
+func resolveLatestGNAF(client *http.Client, endpoint string) (string, error) {
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("query latest G-NAF release: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("query latest G-NAF release: %s", response.Status)
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		Result  struct {
+			Resources []struct {
+				Name         string `json:"name"`
+				Format       string `json:"format"`
+				Created      string `json:"created"`
+				LastModified string `json:"last_modified"`
+				URL          string `json:"url"`
+			} `json:"resources"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode latest G-NAF release: %w", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("query latest G-NAF release: unsuccessful response")
+	}
+
+	latestURL := ""
+	latestTime := time.Time{}
+	for _, resource := range result.Result.Resources {
+		name := strings.ToUpper(resource.Name)
+		if !strings.Contains(name, "G-NAF") || !strings.Contains(name, "GDA2020") {
+			continue
+		}
+		if !strings.EqualFold(resource.Format, "ZIP") && !strings.HasSuffix(strings.ToLower(resource.URL), ".zip") {
+			continue
+		}
+
+		modified := parseResourceTime(resource.LastModified)
+		if modified.IsZero() {
+			modified = parseResourceTime(resource.Created)
+		}
+		if latestURL == "" || modified.After(latestTime) || modified.Equal(latestTime) && resource.URL < latestURL {
+			latestURL = resource.URL
+			latestTime = modified
+		}
+	}
+	if latestURL == "" {
+		return "", fmt.Errorf("query latest G-NAF release: no GDA2020 ZIP resource found")
+	}
+	return latestURL, nil
+}
+
+func parseResourceTime(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func openZipArchive(source string) (*zip.Reader, io.Closer, error) {

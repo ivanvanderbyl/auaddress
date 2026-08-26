@@ -3,8 +3,37 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
+
+func TestResolveLatestGNAFSelectsNewestGDA2020Zip(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+  "success": true,
+  "result": {
+    "resources": [
+      {"name":"Release report August 2026","format":"PDF","last_modified":"2026-08-18T00:00:00Z","url":"https://example.test/report.pdf"},
+      {"name":"AUG 2026 - Geoscape G-NAF - GDA94","format":"ZIP","last_modified":"2026-08-17T04:00:00Z","url":"https://example.test/gnaf-aug-2026-gda94.zip"},
+      {"name":"FEB 2026 - Geoscape G-NAF - GDA2020","format":"ZIP","last_modified":"2026-02-16T03:00:00Z","url":"https://example.test/gnaf-feb-2026-gda2020.zip"},
+      {"name":"AUG 2026 - Geoscape G-NAF - GDA2020","format":"ZIP","last_modified":"2026-08-17T03:00:00Z","url":"https://example.test/gnaf-aug-2026-gda2020.zip"}
+    ]
+  }
+}`))
+	}))
+	defer server.Close()
+
+	got, err := resolveLatestGNAF(server.Client(), server.URL)
+	if err != nil {
+		t.Fatalf("resolve latest G-NAF: %v", err)
+	}
+	const expected = "https://example.test/gnaf-aug-2026-gda2020.zip"
+	if got != expected {
+		t.Fatalf("expected %s, got %s", expected, got)
+	}
+}
 
 func TestReadGNAFLocalitiesIncludesPrimaryAndAliasNames(t *testing.T) {
 	var archive bytes.Buffer

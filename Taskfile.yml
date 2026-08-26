@@ -1,0 +1,63 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: Check formatting, vet, and test all packages
+    cmds:
+      - |
+        unformatted="$(gofmt -l .)"
+        if [ -n "$unformatted" ]; then
+          echo "The following Go files need formatting:"
+          echo "$unformatted"
+          exit 1
+        fi
+      - go vet ./...
+      - go test ./...
+
+  gnaf:update:
+    desc: Regenerate the embedded locality index from the latest GDA2020 G-NAF release
+    cmds:
+      - go run ./cmd/locality-gen -source latest -output localities_generated.go
+      - gofmt -w localities_generated.go
+      - task: test
+
+  release:
+    desc: Verify and create an annotated local release tag (VERSION=vX.Y.Z)
+    requires:
+      vars: [VERSION]
+    env:
+      AUADDRESS_RELEASE_VERSION: '{{.VERSION}}'
+    preconditions:
+      - sh: test -n "$AUADDRESS_RELEASE_VERSION"
+        msg: VERSION must not be empty
+      - sh: printf '%s\n' "$AUADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        msg: VERSION must use vMAJOR.MINOR.PATCH format
+      - sh: test -z "$(git status --porcelain)"
+        msg: The worktree must be clean before creating a release tag
+      - sh: '! git rev-parse --verify --quiet "refs/tags/$AUADDRESS_RELEASE_VERSION" >/dev/null'
+        msg: The requested tag already exists
+    cmds:
+      - task: test
+      - git tag -a "$AUADDRESS_RELEASE_VERSION" -m "Release $AUADDRESS_RELEASE_VERSION"
+      - echo "Created local tag $AUADDRESS_RELEASE_VERSION. Push it with task release:push VERSION=$AUADDRESS_RELEASE_VERSION"
+
+  release:push:
+    desc: Push an existing release tag (VERSION=vX.Y.Z)
+    requires:
+      vars: [VERSION]
+    env:
+      AUADDRESS_RELEASE_VERSION: '{{.VERSION}}'
+    preconditions:
+      - sh: test -n "$AUADDRESS_RELEASE_VERSION"
+        msg: VERSION must not be empty
+      - sh: printf '%s\n' "$AUADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+        msg: VERSION must use vMAJOR.MINOR.PATCH format
+      - sh: git rev-parse --verify --quiet "refs/tags/$AUADDRESS_RELEASE_VERSION" >/dev/null
+        msg: Create the local tag with task release first
+    cmds:
+      - git push origin "refs/tags/$AUADDRESS_RELEASE_VERSION"

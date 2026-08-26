@@ -229,6 +229,23 @@ go build ./cmd/gnaf-gen
 
 The G-NAF dataset is excluded from git via `.gitignore`.
 
+## Development and Releases
+
+The repository includes a Taskfile for routine maintenance:
+
+```bash
+task test
+task gnaf:update
+task release VERSION=v1.2.3
+task release:push VERSION=v1.2.3
+```
+
+`gnaf:update` resolves the latest GDA2020 G-NAF ZIP from the official
+data.gov.au package metadata, regenerates the embedded locality index, and runs
+the verification suite. `release` requires a clean worktree and creates only a
+local annotated semantic-version tag; pushing that tag is a separate explicit
+step.
+
 ## References
 
 - [Australia Post Addressing Guidelines](https://auspost.com.au/sending/guidelines/addressing-guidelines)
