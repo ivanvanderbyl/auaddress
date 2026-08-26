@@ -24,13 +24,13 @@ func TestRunParse(t *testing.T) {
 			name:       "missing address",
 			args:       []string{"parse-address"},
 			wantCode:   1,
-			wantStderr: "expected one address",
+			wantStderr: "expected one address input",
 		},
 		{
 			name:       "too many addresses",
 			args:       []string{"parse-address", "54 Wellington Street, Collingwood", "1 George Street, Sydney"},
 			wantCode:   1,
-			wantStderr: "expected one address",
+			wantStderr: "expected one address input",
 		},
 	}
 

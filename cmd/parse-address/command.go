@@ -62,7 +62,7 @@ func newCommand(stdout, stderr io.Writer, options *outputOptions) *cli.Command {
 	return &cli.Command{
 		Name:      "parse-address",
 		Usage:     "parse and compare Australian addresses",
-		ArgsUsage: "ADDRESS",
+		ArgsUsage: "ADDRESS_INPUT",
 		Writer:    stdout,
 		ErrWriter: stderr,
 		Flags:     []cli.Flag{jsonFlag(options)},
@@ -82,7 +82,7 @@ func jsonFlag(options *outputOptions) cli.Flag {
 func parseAction(stdout io.Writer) cli.ActionFunc {
 	return func(_ context.Context, command *cli.Command) error {
 		if command.NArg() != 1 {
-			return fmt.Errorf("expected one address")
+			return fmt.Errorf("expected one address input")
 		}
 
 		raw := strings.ReplaceAll(command.Args().First(), `\n`, "\n")
