@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Replace the line-based regular-expression parser with a greedy left-to-right token grammar that accepts locality-terminated partial addresses and preserves ordered street and postal delivery points.
+**Goal:** Replace the line-based regular-expression parser with a greedy left-to-right token grammar that parses one or more locality-terminated addresses and compares their normalized specificity.
 
-**Architecture:** Use `text/scanner` to produce normalized tokens with source positions and soft comma/newline boundaries. Parse those tokens with a deterministic cursor, longest-match vocabulary lookups, and an embedded locality-to-state-mask index, then project the canonical ordered result into the existing flat API.
+**Architecture:** Use `text/scanner` to produce normalized tokens with source positions and soft comma/newline boundaries. Parse those tokens with a deterministic cursor, longest-match vocabulary lookups, and an embedded locality-to-state-mask index; emit each independently terminated address and project it into the existing flat API. Compare parsed results using hierarchical component keys rather than fuzzy text distance.
 
 **Tech Stack:** Go standard library, Go 1.25 module compatibility, generated ABS locality data, table-driven tests, and the existing G-NAF regression suite.
 
@@ -306,7 +306,162 @@ git add address.go address_test.go
 git commit -m "Update partial address validation"
 ```
 
-### Task 7: Document the address token parsing grammar
+### Task 7: Parse multiple independently terminated addresses
+
+**Files:**
+- Modify: `address.go`
+- Modify: `parser.go`
+- Modify: `address_test.go`
+
+**Step 1: Write failing `ParseAll` tests**
+
+Cover the approved example, arbitrary line breaks, shared prefix propagation,
+and the distinction between shared and independent locality terminators:
+
+```go
+input := `ACME PTY LTD
+Level 8, 20 Bond Street, Sydney, NSW 2000
+GPO Box 1234, Sydney, NSW 2001`
+
+addresses, err := ParseAll(input)
+// expect two results; both have NameLines == []string{"ACME PTY LTD"}
+```
+
+Assert that `123 Main Street, PO Box 42, Richmond VIC 3121` remains one result,
+that the same two addresses on one line remain two results, and that `Parse`
+returns the first result. Add strict rejection for unexplained text between
+otherwise valid address blocks.
+
+**Step 2: Run tests and verify they fail**
+
+Run: `go test ./... -run 'TestParseAll|TestParseReturnsFirstAddress'`
+
+Expected: FAIL because `ParseAll` does not exist.
+
+**Step 3: Implement address-sequence parsing**
+
+Add package and parser methods named `ParseAll`. Refactor the existing
+single-address driver so a locality plus optional state/postcode may terminate
+at EOF or immediately before another valid delivery-point start. Emit the
+completed result, resume at that start, and require full token consumption.
+Copy the shared prefix `NameLines` to every result. Make existing `Parse`
+delegate to `ParseAll` and return its first result.
+
+**Step 4: Run focused and complete tests**
+
+Run: `go test ./... -run 'TestParseAll|TestParseReturnsFirstAddress' && go test ./...`
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add address.go parser.go address_test.go
+git commit -m "Parse multiple addresses from ADR spans"
+```
+
+### Task 8: Add hierarchical normalized comparison
+
+**Files:**
+- Create: `match.go`
+- Create: `match_test.go`
+
+**Step 1: Write failing key and comparison tests**
+
+Test normalized aliases, exact matches, missing state/postcode, missing
+unit/level, and conflicting components. The public API is:
+
+```go
+func (a *ParsedAddress) ComparisonKey() string
+func CompareAddresses(left, right *ParsedAddress) AddressMatch
+```
+
+Assert that `123 Main Street, Richmond` partially matches
+`123 Main St, Richmond VIC 3121` through locality, and that
+`Level 8, 20 Bond Street, Sydney NSW 2000` partially matches the same address
+without a level while reporting `MatchLevel` missing from one side.
+
+**Step 2: Run tests and verify they fail**
+
+Run: `go test ./... -run 'TestComparisonKey|TestCompareAddresses'`
+
+Expected: FAIL because the comparison API does not exist.
+
+**Step 3: Implement typed component keys**
+
+Add `MatchKind`, `MatchComponent`, and `AddressMatch`. Build deterministic keys
+from canonical delivery points followed by locality, state, and postcode.
+Comparison aligns compatible delivery kinds, rejects conflicting populated
+identity components, records missing components on each side, and reports the
+furthest equal component. Do not add edit distance or phonetic matching.
+
+**Step 4: Run focused and complete tests**
+
+Run: `go test ./... -run 'TestComparisonKey|TestCompareAddresses' && go test ./...`
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add match.go match_test.go
+git commit -m "Add normalized address comparison"
+```
+
+### Task 9: Add G-NAF and release Taskfile automation
+
+**Files:**
+- Create: `Taskfile.yml`
+- Modify: `cmd/locality-gen/main.go`
+- Modify: `cmd/locality-gen/main_test.go`
+- Modify: `README.md`
+
+**Step 1: Write failing latest-release resolver tests**
+
+Use an `httptest.Server` with a representative data.gov.au CKAN package response
+and assert that the generator selects the newest GDA2020 ZIP resource rather
+than GDA94 or documentation resources.
+
+**Step 2: Run the resolver test and verify it fails**
+
+Run: `go test ./cmd/locality-gen -run TestResolveLatestGNAF`
+
+Expected: FAIL because latest-release resolution does not exist.
+
+**Step 3: Implement latest G-NAF resolution**
+
+Teach `locality-gen -source latest` to query the official CKAN package endpoint,
+select the latest GDA2020 ZIP deterministically, and record the resolved archive
+URL in generated output.
+
+**Step 4: Add guarded Taskfile tasks**
+
+Use Taskfile v3 syntax. Add:
+
+- `test`: format check, vet, and tests;
+- `gnaf:update`: run the generator with `-source latest`, format, and test;
+- `release`: require `VERSION`, require a clean worktree, validate `vMAJOR.MINOR.PATCH`,
+  run `test`, verify the tag does not exist, and create an annotated local tag;
+  and
+- `release:push`: explicitly push a previously created tag.
+
+Do not execute either release task during implementation.
+
+**Step 5: Validate the Taskfile without mutating Git**
+
+Run: `task --list && task test`
+
+Expected: tasks are listed and verification passes. If `task` is unavailable,
+validate the YAML and commands independently and report the missing executable.
+
+**Step 6: Commit**
+
+```bash
+git add Taskfile.yml cmd/locality-gen/main.go cmd/locality-gen/main_test.go README.md
+git commit -m "Add G-NAF refresh and release tasks"
+```
+
+### Task 10: Document the address token parsing grammar
 
 **Files:**
 - Modify: `README.md`
@@ -338,7 +493,7 @@ git add README.md docs/plans/2026-08-26-address-token-parsing-grammar-design.md
 git commit -m "Document token grammar parser"
 ```
 
-### Task 8: Verify correctness, determinism, and performance
+### Task 11: Verify correctness, determinism, and performance
 
 **Files:**
 - Modify: `gnaf_test.go`
@@ -385,4 +540,3 @@ scope; no unrelated files changed.
 git add gnaf_test.go locality_test.go
 git commit -m "Add token grammar regression benchmarks"
 ```
-
