@@ -1,4 +1,4 @@
-# Address Token Parsing Grammar Design
+# Address token parsing grammar design
 
 ## Goal
 
@@ -21,7 +21,7 @@ locality.
 
 ## Architecture
 
-The parser has four stages:
+The parser has five stages:
 
 1. Normalize line endings and whitespace without losing comma and newline
    boundary positions.
@@ -41,7 +41,7 @@ left to right.
 Regular expressions are removed from the parsing path. Keyword tables and
 small rune classifiers recognize atomic token shapes.
 
-## Token Model
+## Token model
 
 The lexer emits these token kinds:
 
@@ -100,7 +100,7 @@ The input is an ADR-tagged span rather than arbitrary email text. Every
 non-boundary token must belong to the shared prefix or one parsed address;
 unexplained text is invalid.
 
-## Locality Index
+## Locality index
 
 The package embeds normalized Australian locality names with an eight-bit
 state mask. Duplicate locality names across states collapse into one entry with
@@ -114,11 +114,11 @@ requests so refreshing the index does not download unrelated address tables.
 Callers do not need the source dataset or a network connection at build or run
 time.
 
-The index contains roughly 22,000 primary and alias names. Runtime memory and
-binary size are measured during final verification rather than constrained by
-an arbitrary threshold.
+The generated index currently contains 21,852 primary and alias names. Runtime
+memory and binary size are measured during final verification rather than
+constrained by an arbitrary threshold.
 
-## Public Model
+## Public model
 
 Add an ordered delivery model:
 
@@ -177,7 +177,7 @@ func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error)
 Existing `Parse` delegates to `ParseAll` and returns the first result, preserving
 its signature and single-address behavior.
 
-## Normalized Comparison
+## Normalised comparison
 
 Each parsed address can produce a deterministic comparison key from normalized
 delivery, locality, state, and postcode components. The key retains component
@@ -215,7 +215,7 @@ both sides. Missing-component lists explain the specificity difference. This
 version deliberately excludes edit distance, phonetic matching, and typo
 correction.
 
-## Error Handling
+## Error handling
 
 Lenient mode returns the recognized partial structure and records grammar or
 validation failures in `ParsedAddress.Errors`. Strict mode returns the first
@@ -238,7 +238,7 @@ successfully parsed prefix plus the first segmentation or validation error. In
 lenient mode it records the error on the affected result where possible. It
 never silently treats unexplained trailing content as another address.
 
-## Repository Automation
+## Repository automation
 
 A root `Taskfile.yml` provides a task that resolves the latest GDA2020 G-NAF
 release from data.gov.au and regenerates the locality index. A guarded release
