@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -64,6 +65,29 @@ func TestReadGNAFLocalitiesIncludesPrimaryAndAliasNames(t *testing.T) {
 	}
 	if got := localities["CANBERRA"]; got != stateBits["ACT"] {
 		t.Errorf("CANBERRA state mask: expected %08b, got %08b", stateBits["ACT"], got)
+	}
+}
+
+func TestRenderLocalitiesIsDeterministicAndRecordsResolvedSource(t *testing.T) {
+	localities := map[string]uint8{
+		"RICHMOND": stateBits["VIC"] | stateBits["NSW"],
+		"SYDNEY":   stateBits["NSW"],
+	}
+	const resolvedSource = "https://example.test/g-naf_feb27_allstates_gda2020_psv.zip"
+
+	first, err := renderLocalities(localities, resolvedSource)
+	if err != nil {
+		t.Fatalf("render first locality index: %v", err)
+	}
+	second, err := renderLocalities(localities, resolvedSource)
+	if err != nil {
+		t.Fatalf("render second locality index: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("expected identical generated output for identical input")
+	}
+	if !strings.Contains(string(first), "// Source: "+resolvedSource+" (Geoscape G-NAF, GDA2020 PSV)") {
+		t.Fatalf("expected resolved source provenance without a hard-coded edition:\n%s", first)
 	}
 }
 

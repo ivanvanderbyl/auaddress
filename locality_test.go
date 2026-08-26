@@ -38,12 +38,16 @@ func TestLocalityStateMaskMergesDuplicateNames(t *testing.T) {
 }
 
 func TestLocalityIndexHasOfficialData(t *testing.T) {
-	if len(localityStates) < 20_000 || len(localityStates) > 25_000 {
-		t.Errorf("unexpected locality index size: %d", len(localityStates))
+	const expectedLocalityCount = 21_852
+	if len(localityStates) != expectedLocalityCount {
+		t.Errorf("locality index size: expected %d, got %d; review and update this invariant when refreshing G-NAF", expectedLocalityCount, len(localityStates))
 	}
-	for locality, state := range map[string]string{"BRISBANE": "QLD", "CANBERRA": "ACT"} {
-		if !localityStates[locality].contains(state) {
-			t.Errorf("expected %s locality mask to contain %s", locality, state)
+	for locality, expected := range map[string]stateMask{
+		"BRISBANE": stateQLD,
+		"CANBERRA": stateACT,
+	} {
+		if got := localityStates[locality]; got != expected {
+			t.Errorf("%s locality mask: expected %08b, got %08b", locality, expected, got)
 		}
 	}
 	if maxLocalityTokens < 3 {
