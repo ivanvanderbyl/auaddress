@@ -20,16 +20,53 @@ L 4 54 WELLINGTON ST
 COLLINGWOOD
 ```
 
-The root command accepts one address. Use the Go `ParseAll` API when one input
-contains more than one independently completed address.
+Pass one positional input containing one or more independently completed
+addresses.
 
 Add `--json` for structured output. The flag can appear before or after the
-address:
+input:
 
 ```console
 $ parse-address 'Level 4, 54 Wellington Street, Collingwood' --json
-{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}
+[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]
 ```
+
+The root command always returns a JSON array, including when it finds one
+address.
+
+Parse multiple addresses by separating them with newlines:
+
+```console
+$ parse-address 'Level 4, 54 Wellington St, Collingwood\nPO Box 234, Melbourne' --json | jq
+[
+  {
+    "deliveryPoints": [
+      {
+        "kind": "street",
+        "level": "L 4",
+        "streetNumber": "54",
+        "streetName": "WELLINGTON",
+        "streetType": "ST"
+      }
+    ],
+    "locality": "COLLINGWOOD"
+  },
+  {
+    "deliveryPoints": [
+      {
+        "kind": "postal",
+        "postalType": "PO BOX",
+        "postalNumber": "234"
+      }
+    ],
+    "locality": "MELBOURNE"
+  }
+]
+```
+
+The command accepts both literal `\n` sequences and actual newline characters
+in the positional input. Without `--json`, it separates formatted addresses
+with one blank line.
 
 ## Use the Go package
 
@@ -134,9 +171,9 @@ fmt.Println(match.MissingFromLeft[1] == auaddress.MatchPostcode) // true
 `ComparisonKey` exposes the canonical components as a deterministic string.
 Comparison does not use edit distance, phonetic matching, or typo correction.
 
-## Parse more than one address
+## Parse more than one address from Go
 
-Use `ParseAll` when one input contains independently completed addresses:
+Call `ParseAll` to parse multiple addresses in Go:
 
 ```go
 addresses, err := auaddress.ParseAll(`School Infrastructure NSW
@@ -194,7 +231,8 @@ if address.IsValid() {
 ```
 
 The command-line tool uses strict parsing. Failures go to standard error and
-exit non-zero. With `--json`, failures use the same machine-readable mode:
+exit non-zero. If any address fails, the command writes no successful addresses
+to standard output. With `--json`, failures use the same machine-readable mode:
 
 ```json
 {"error":"invalid address format"}
