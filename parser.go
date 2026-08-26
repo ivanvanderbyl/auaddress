@@ -155,12 +155,12 @@ func parseSequenceTail(tokens []token, start int, locality localityMatch) (addre
 	}
 
 	current := tokens[position]
-	if _, isState := validStates[current.value]; isState {
-		tail.state = current.value
-		if !locality.states.contains(current.value) {
+	if state, next, isState := matchKeyword(tokens, position, len(tokens), stateKeywords); isState {
+		tail.state = state
+		if !locality.states.contains(state) {
 			tail.err = ErrNoState
 		}
-		position = skipSoftTokens(tokens, position+1)
+		position = skipSoftTokens(tokens, next)
 	} else if current.kind == tokenWord && hasPostcodeAfter(tokens, position+1) {
 		tail.err = ErrNoState
 		position = skipSoftTokens(tokens, position+1)

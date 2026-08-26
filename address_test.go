@@ -752,6 +752,34 @@ func TestTokenGrammarStrictErrors(t *testing.T) {
 	}
 }
 
+func TestFullStateNamesNormalize(t *testing.T) {
+	parser := NewParser(WithStrict(true))
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"New South Wales", "1 George Street, Sydney New South Wales 2000", "NSW"},
+		{"Victoria", "1 Collins Street, Melbourne Victoria 3000", "VIC"},
+		{"Queensland", "1 Queen Street, Brisbane Queensland 4000", "QLD"},
+		{"South Australia", "1 King William Street, Adelaide South Australia 5000", "SA"},
+		{"Western Australia", "1 Hay Street, Perth Western Australia 6000", "WA"},
+		{"Tasmania", "1 Macquarie Street, Hobart Tasmania 7000", "TAS"},
+		{"Australian Capital Territory", "1 Northbourne Avenue, Canberra Australian Capital Territory 2600", "ACT"},
+		{"Northern Territory", "1 Smith Street, Darwin Northern Territory 0800", "NT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			address, err := parser.Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse returned an error: %v", err)
+			}
+			assertEqual(t, "State", tt.expected, address.State)
+		})
+	}
+}
+
 func TestParseAllIndependentAddresses(t *testing.T) {
 	input := `ACME PTY LTD
 Level 8, 259 George Street, Sydney, NSW 2000

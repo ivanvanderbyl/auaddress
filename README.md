@@ -240,7 +240,8 @@ to standard output. With `--json`, failures use the same machine-readable mode:
 
 ## Supported components
 
-- States: NSW, VIC, QLD, SA, WA, TAS, ACT, and NT.
+- States and territories: full names and abbreviations, normalised to NSW, VIC,
+  QLD, SA, WA, TAS, ACT, and NT.
 - Street types: G-NAF forms including STREET/ST, ROAD/RD, AVENUE/AV,
   DRIVE/DR, PLACE/PL, COURT/CT, and their normalised abbreviations.
 - Unit types: UNIT, FLAT, APARTMENT/APT, VILLA, LOT, SHOP, SUITE, ROOM,

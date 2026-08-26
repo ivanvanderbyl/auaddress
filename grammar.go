@@ -11,6 +11,7 @@ var (
 	postalKeywords = newKeywordTable(deliveryPointKeywords)
 	unitKeywords   = newKeywordTable(unitTypes)
 	levelKeywords  = newKeywordTable(levelTypes)
+	stateKeywords  = newKeywordTable(stateTypes)
 )
 
 func newKeywordTable(source map[string]string) keywordTable {
