@@ -99,6 +99,46 @@ func TestRunParseMultiple(t *testing.T) {
 	}
 }
 
+func TestRunParseMultipleFailureIsAtomic(t *testing.T) {
+	const input = "54 Wellington Street, Collingwood\n54 Imaginary Street"
+
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "plain",
+			args:       []string{"parse-address", input},
+			wantStderr: "invalid address format\n",
+		},
+		{
+			name:       "JSON",
+			args:       []string{"parse-address", input, "--json"},
+			wantStderr: `{"error":"invalid address format"}` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != 1 {
+				t.Fatalf("exit code: want 1, got %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout: want empty, got %q", stdout.String())
+			}
+			if stderr.String() != tt.wantStderr {
+				t.Errorf("stderr:\nwant: %q\ngot:  %q", tt.wantStderr, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunParseJSON(t *testing.T) {
 	tests := []struct {
 		name string
