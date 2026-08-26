@@ -15,12 +15,15 @@ structured Go values. Follow it with a runnable example using
 fields.
 
 State the minimum grammar contract next to the example. A locality completes an
-address. State and postcode add specificity but remain optional. Also state
-that callers should pass an address span rather than arbitrary email text.
+address. State and postcode add specificity but remain optional. Explain in the
+limitations that the package parses supplied address text rather than locating
+an address inside surrounding prose.
 
 ## Structure
 
-After the first successful parse, explain the library in this order:
+Lead with the installable `parse-address` command because it produces the
+fastest visible result. Follow it immediately with the Go library quickstart.
+After those first successful parses, explain the library in this order:
 
 1. Show the compact address grammar and explain locality termination, soft
    comma and newline boundaries, and ordered delivery points.
