@@ -56,8 +56,8 @@ func TestCompareAddressesMissingStateAndPostcode(t *testing.T) {
 }
 
 func TestCompareAddressesMissingLevel(t *testing.T) {
-	left := mustParseAddress(t, "Level 8, 20 Bond Street, Sydney NSW 2000")
-	right := mustParseAddress(t, "20 Bond Street, Sydney NSW 2000")
+	left := mustParseAddress(t, "Level 8, 259 George Street, Sydney NSW 2000")
+	right := mustParseAddress(t, "259 George Street, Sydney NSW 2000")
 
 	match := CompareAddresses(left, right)
 	if match.Kind != PartialMatch {

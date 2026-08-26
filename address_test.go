@@ -754,8 +754,8 @@ func TestTokenGrammarStrictErrors(t *testing.T) {
 
 func TestParseAllIndependentAddresses(t *testing.T) {
 	input := `ACME PTY LTD
-Level 8, 20 Bond Street, Sydney, NSW 2000
-GPO Box 1234, Sydney, NSW 2001`
+Level 8, 259 George Street, Sydney, NSW 2000
+GPO Box 33, Sydney, NSW 2001`
 
 	addresses, err := ParseAll(input)
 	if err != nil {
@@ -767,20 +767,20 @@ GPO Box 1234, Sydney, NSW 2001`
 
 	assertStringSliceEqual(t, "first NameLines", []string{"ACME PTY LTD"}, addresses[0].NameLines)
 	assertEqual(t, "first Level", "L 8", addresses[0].Level)
-	assertEqual(t, "first StreetNumber", "20", addresses[0].StreetNumber)
-	assertEqual(t, "first StreetName", "BOND", addresses[0].StreetName)
+	assertEqual(t, "first StreetNumber", "259", addresses[0].StreetNumber)
+	assertEqual(t, "first StreetName", "GEORGE", addresses[0].StreetName)
 	assertEqual(t, "first Locality", "SYDNEY", addresses[0].Locality)
 	assertEqual(t, "first Postcode", "2000", addresses[0].Postcode)
 
 	assertStringSliceEqual(t, "second NameLines", []string{"ACME PTY LTD"}, addresses[1].NameLines)
 	assertEqual(t, "second PoBoxType", "GPO BOX", addresses[1].PoBoxType)
-	assertEqual(t, "second PoBoxNumber", "1234", addresses[1].PoBoxNumber)
+	assertEqual(t, "second PoBoxNumber", "33", addresses[1].PoBoxNumber)
 	assertEqual(t, "second Locality", "SYDNEY", addresses[1].Locality)
 	assertEqual(t, "second Postcode", "2001", addresses[1].Postcode)
 }
 
 func TestParseAllIgnoresPhysicalLineLayout(t *testing.T) {
-	input := "20 Bond\nStreet Sydney NSW 2000 GPO\nBox 1234 Sydney NSW\n2001"
+	input := "259 George\nStreet Sydney NSW 2000 GPO\nBox 33 Sydney NSW\n2001"
 
 	addresses, err := ParseAll(input)
 	if err != nil {
@@ -807,17 +807,17 @@ func TestParseAllKeepsSharedLocalityDeliveryPointsTogether(t *testing.T) {
 }
 
 func TestParseReturnsFirstAddress(t *testing.T) {
-	addr, err := Parse("20 Bond Street Sydney NSW 2000 GPO Box 1234 Sydney NSW 2001")
+	addr, err := Parse("259 George Street Sydney NSW 2000 GPO Box 33 Sydney NSW 2001")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertEqual(t, "StreetNumber", "20", addr.StreetNumber)
+	assertEqual(t, "StreetNumber", "259", addr.StreetNumber)
 	assertEqual(t, "Postcode", "2000", addr.Postcode)
 }
 
 func TestParseAllStrictRejectsUnexplainedText(t *testing.T) {
 	parser := NewParser(WithStrict(true))
-	addresses, err := parser.ParseAll("20 Bond Street Sydney NSW 2000 UNEXPLAINED GPO Box 1234 Sydney NSW 2001")
+	addresses, err := parser.ParseAll("259 George Street Sydney NSW 2000 UNEXPLAINED GPO Box 33 Sydney NSW 2001")
 	if err != ErrInvalidAddress {
 		t.Fatalf("expected ErrInvalidAddress, got %v", err)
 	}

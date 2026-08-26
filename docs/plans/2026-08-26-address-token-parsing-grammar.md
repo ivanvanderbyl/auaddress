@@ -320,8 +320,8 @@ and the distinction between shared and independent locality terminators:
 
 ```go
 input := `ACME PTY LTD
-Level 8, 20 Bond Street, Sydney, NSW 2000
-GPO Box 1234, Sydney, NSW 2001`
+Level 8, 259 George Street, Sydney, NSW 2000
+GPO Box 33, Sydney, NSW 2001`
 
 addresses, err := ParseAll(input)
 // expect two results; both have NameLines == []string{"ACME PTY LTD"}
@@ -378,7 +378,7 @@ func CompareAddresses(left, right *ParsedAddress) AddressMatch
 
 Assert that `123 Main Street, Richmond` partially matches
 `123 Main St, Richmond VIC 3121` through locality, and that
-`Level 8, 20 Bond Street, Sydney NSW 2000` partially matches the same address
+`Level 8, 259 George Street, Sydney NSW 2000` partially matches the same address
 without a level while reporting `MatchLevel` missing from one side.
 
 **Step 2: Run tests and verify they fail**
