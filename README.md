@@ -290,11 +290,20 @@ task release VERSION=v1.2.3
 task release:push VERSION=v1.2.3
 ```
 
-`task test` checks Go formatting, runs `go vet`, and runs all tests.
+Every pull request merged into `main` creates the next patch version tag and a
+GitHub Release with generated notes. While a pull request is open, its workflow
+summary shows the proposed release tag.
+
+`task test` checks Go formatting, runs `go vet`, runs all Go tests, and tests
+the release-version calculator.
+
 `gnaf:verify` regenerates the locality index from the source URL recorded in the
-generated file and compares it byte for byte. `release` runs that check,
-requires a clean worktree, and creates an annotated local semantic-version tag.
-It never pushes. `release:push` is the separate explicit push step.
+generated file and compares it byte for byte.
+
+`release` and `release:push` remain available for manual recovery, rather than
+the normal release process. `release` runs the G-NAF check, requires a clean
+worktree, and creates an annotated local semantic-version tag. It never pushes.
+`release:push` is the separate explicit push step.
 
 ## References
 
