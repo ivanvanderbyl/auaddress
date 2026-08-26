@@ -100,3 +100,82 @@ func TestRunParseJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestRunCompare(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "exact",
+			args: []string{
+				"parse-address", "compare",
+				"54 Wellington Street, Collingwood VIC 3066",
+				"54 Wellington St, Collingwood VIC 3066",
+			},
+			want: "exact\n",
+		},
+		{
+			name: "partial",
+			args: []string{
+				"parse-address", "compare",
+				"54 Wellington Street, Collingwood",
+				"54 Wellington St, Collingwood VIC 3066",
+			},
+			want: "partial\nmatched through: locality\nmissing from left: state, postcode\n",
+		},
+		{
+			name: "no match",
+			args: []string{
+				"parse-address", "compare",
+				"54 Wellington Street, Collingwood",
+				"55 Wellington Street, Collingwood",
+			},
+			want: "no match\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code: want 0, got %d; stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("stdout:\nwant: %q\ngot:  %q", tt.want, stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr: want empty, got %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunCompareJSON(t *testing.T) {
+	args := []string{
+		"parse-address", "compare",
+		"54 Wellington Street, Collingwood",
+		"54 Wellington St, Collingwood VIC 3066",
+		"--json",
+	}
+	want := `{"kind":"partial","matchedThrough":"locality","missingFromLeft":["state","postcode"],"missingFromRight":[],"leftKey":"STREET{UNIT=;LEVEL=;NUMBER=54;NAME=WELLINGTON;TYPE=ST;SUFFIX=}|LOCALITY=COLLINGWOOD|STATE=|POSTCODE=","rightKey":"STREET{UNIT=;LEVEL=;NUMBER=54;NAME=WELLINGTON;TYPE=ST;SUFFIX=}|LOCALITY=COLLINGWOOD|STATE=VIC|POSTCODE=3066"}` + "\n"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), args, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code: want 0, got %d; stderr: %s", code, stderr.String())
+	}
+	if stdout.String() != want {
+		t.Errorf("stdout:\nwant: %q\ngot:  %q", want, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr: want empty, got %q", stderr.String())
+	}
+}
