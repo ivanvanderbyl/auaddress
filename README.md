@@ -1,47 +1,142 @@
 # auaddress
 
-Parse one or more Australian address fragments from an address-tagged string.
-The greedy, left-to-right address token parsing grammar accepts an address once
-it finds a street or postal delivery point followed by a known locality. State
-and postcode are optional.
+Parse complete or partial Australian addresses from Go or the command line.
+`auaddress` normalises street, postal, locality, state, and postcode components
+without a network connection.
 
-The parser treats commas and line breaks as soft boundaries. It can recover an
-address split across lines, keep a street and PO box that share one locality,
-or return two addresses from one model tag.
+## Try the command
 
-## Install
+Install the binary with Go:
+
+```bash
+go install github.com/ivanvanderbyl/auaddress/cmd/parse-address@latest
+```
+
+Parse an address directly:
+
+```console
+$ parse-address 'Level 4, 54 Wellington Street, Collingwood'
+L 4 54 WELLINGTON ST
+COLLINGWOOD
+```
+
+The root command accepts one address. Use the Go `ParseAll` API when one input
+contains more than one independently completed address.
+
+Add `--json` for structured output. The flag can appear before or after the
+address:
+
+```console
+$ parse-address 'Level 4, 54 Wellington Street, Collingwood' --json
+{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}
+```
+
+## Use the Go package
 
 ```bash
 go get github.com/ivanvanderbyl/auaddress
 ```
 
-## Parse one address
-
-`Parse` returns the first address in the input. A partial address is valid when
-it has a delivery point and a locality:
-
 ```go
-addr, err := auaddress.Parse("123 Main Street, Richmond")
-if err != nil {
-    return err
-}
+package main
 
-fmt.Println(addr.StreetNumber) // 123
-fmt.Println(addr.StreetName)   // MAIN
-fmt.Println(addr.StreetType)   // ST
-fmt.Println(addr.Locality)     // RICHMOND
-fmt.Println(addr.State)        // empty
-fmt.Println(addr.Postcode)     // empty
+import (
+    "fmt"
+    "log"
+
+    "github.com/ivanvanderbyl/auaddress"
+)
+
+func main() {
+    address, err := auaddress.Parse("3A/45 High Street, Richmond")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println(address.Unit)
+    fmt.Println(address.FormatDeliveryLine())
+    fmt.Println(address.Locality)
+}
 ```
 
-`123 Main Street` is not valid because it has no recognised locality. This
-allows callers to omit a state or country when the recipient's context already
-supplies it without accepting a bare delivery line.
+Output:
 
-## Parse every address in a tag
+```text
+3A
+3A 45 HIGH ST
+RICHMOND
+```
 
-Use `ParseAll` when an address recognition model may return more than one
-address in one address (`ADR`) tag:
+## How an address is recognised
+
+The core grammar is:
+
+```text
+Address       := DeliveryPoint+ Locality State? Postcode?
+DeliveryPoint := StreetDelivery | PostalDelivery
+```
+
+Parsing is greedy and left to right. Commas and line breaks are soft
+boundaries. A known locality completes an address; state and postcode add
+specificity but are optional. This makes `123 Main Street, Richmond` valid and
+`123 Main Street` invalid.
+
+Delivery points stay in encounter order. A street and PO box that share one
+locality form one address:
+
+```console
+$ parse-address '123 Main Street, PO Box 42, Richmond VIC 3121'
+123 MAIN ST
+PO BOX 42
+RICHMOND VIC 3121
+```
+
+The parser normalises common forms as it reads them, including `Street` to
+`ST`, `Level 4` and `L4` to `L 4`, and `P.O. Box` to `PO BOX`.
+
+## Compare addresses
+
+Use `compare` to compare normalised components rather than raw strings:
+
+```console
+$ parse-address compare 'L4 54 Wellington Street, Collingwood' 'Level 4, 54 Wellington St, Collingwood'
+exact
+```
+
+A missing unit, level, state, or postcode produces a partial match when all
+populated components agree:
+
+```console
+$ parse-address compare '54 Wellington Street, Collingwood' '54 Wellington St, Collingwood VIC 3066'
+partial
+matched through: locality
+missing from left: state, postcode
+```
+
+Conflicting populated components, such as different street numbers or
+localities, produce `no match`. A valid `no match` result still exits with
+status zero. Add `--json` to receive the kind, matched component, missing
+components, and deterministic keys as camelCase JSON fields.
+
+The same comparison is available from Go:
+
+```go
+left, _ := auaddress.Parse("123 Main Street, Richmond")
+right, _ := auaddress.Parse("123 Main St, Richmond VIC 3121")
+
+match := auaddress.CompareAddresses(left, right)
+fmt.Println(match.Kind == auaddress.PartialMatch)                 // true
+fmt.Println(match.MatchedThrough == auaddress.MatchLocality)     // true
+fmt.Println(match.MissingFromLeft[0] == auaddress.MatchState)    // true
+fmt.Println(match.MissingFromLeft[1] == auaddress.MatchPostcode) // true
+```
+
+`ComparisonKey` exposes the canonical components as a deterministic string.
+Comparison does not use edit distance, phonetic matching, or typo correction.
+
+## Parse more than one address
+
+Use `ParseAll` when one input contains independently completed addresses:
 
 ```go
 addresses, err := auaddress.ParseAll(`School Infrastructure NSW
@@ -51,91 +146,32 @@ if err != nil {
     return err
 }
 
-fmt.Println(len(addresses))          // 2
-fmt.Println(addresses[0].Postcode)   // 2000
-fmt.Println(addresses[1].PoBoxType)  // GPO BOX
-fmt.Println(addresses[1].Postcode)   // 2001
+fmt.Println(len(addresses))         // 2
+fmt.Println(addresses[0].Postcode)  // 2000
+fmt.Println(addresses[1].PoBoxType) // GPO BOX
+fmt.Println(addresses[1].Postcode)  // 2001
 ```
 
 Physical lines do not determine the result count. Each independently
-locality-terminated delivery sequence becomes one result. The parser copies
-shared recipient or organisation lines to every result.
+locality-terminated delivery sequence becomes one result. Shared recipient or
+organisation lines are copied to each result as `NameLines`.
 
-When multiple delivery points share one locality, they remain one address:
+`DeliveryPoints` is the canonical ordered representation when encounter order
+or multiple delivery points matter. The flat street and PO box fields remain
+populated for compatibility and represent the first delivery point of each
+kind.
 
-```go
-addr, _ := auaddress.Parse("123 Main Street, PO Box 42, Richmond VIC 3121")
+## Handle parsing failures
 
-fmt.Println(len(addr.DeliveryPoints)) // 2
-fmt.Println(addr.FormatDeliveryLines())
-// 123 MAIN ST
-// PO BOX 42
-```
-
-## Compare parsed addresses
-
-`ComparisonKey` exposes the normalised components as a deterministic key.
-`CompareAddresses` classifies two parsed addresses as `ExactMatch`,
-`PartialMatch`, or `NoMatch`.
+The default parser is lenient. It returns recognised structure and records the
+first grammar or validation failure in `ParsedAddress.Errors`:
 
 ```go
-left, _ := auaddress.Parse("123 Main Street, Richmond")
-right, _ := auaddress.Parse("123 Main St, Richmond VIC 3121")
-
-match := auaddress.CompareAddresses(left, right)
-fmt.Println(match.Kind == auaddress.PartialMatch) // true
-fmt.Println(match.MatchedThrough == auaddress.MatchLocality) // true
-fmt.Println(match.MissingFromLeft[0] == auaddress.MatchState) // true
-fmt.Println(match.MissingFromLeft[1] == auaddress.MatchPostcode) // true
-```
-
-A missing unit, level, state, or postcode makes the match partial. Conflicting
-populated components, such as different street numbers or localities, produce
-`NoMatch`. Comparison is component-based: it does not use edit distance,
-phonetic matching, or typo correction.
-
-## Work with delivery points
-
-`DeliveryPoints` is the canonical ordered representation. The flat street and
-PO box fields remain populated for existing callers.
-
-```go
-type DeliveryPoint struct {
-    Kind   DeliveryPointKind
-    Street StreetDelivery
-    Postal PostalDelivery
-}
-
-type StreetDelivery struct {
-    Unit         string
-    Level        string
-    StreetNumber string
-    StreetName   string
-    StreetType   string
-    StreetSuffix string
-}
-
-type PostalDelivery struct {
-    Type   string
-    Number string
-}
-```
-
-The compatibility projection uses the first street delivery point and the
-first postal delivery point. Use `DeliveryPoints` when encounter order or more
-than one delivery point matters.
-
-## Choose error handling
-
-The default parser returns recognised structure and records the first grammar
-or validation failure in `ParsedAddress.Errors`:
-
-```go
-addr, err := auaddress.Parse(input)
+address, err := auaddress.Parse(input)
 if err != nil {
-    return err // empty input is always returned directly
+    return err // Empty input is always returned directly.
 }
-if len(addr.Errors) > 0 {
+if len(address.Errors) > 0 {
     // Inspect a lenient parsing failure.
 }
 ```
@@ -152,9 +188,16 @@ An address is valid when it has no recorded errors, at least one delivery
 point, and a recognised locality:
 
 ```go
-if addr.IsValid() {
-    // The string satisfies the grammar.
+if address.IsValid() {
+    // The input satisfies the grammar.
 }
+```
+
+The command-line tool uses strict parsing. Failures go to standard error and
+exit non-zero. With `--json`, failures use the same machine-readable mode:
+
+```json
+{"error":"invalid address format"}
 ```
 
 ## Supported components
@@ -189,11 +232,10 @@ range requests. It records the resolved archive URL in
 
 ## Scope and limitations
 
-Pass an ADR-tagged span to this package. It is not a general email-signature
-extractor. Prefix text may become shared recipient or organisation lines, but
-all content after parsing begins must belong to an address sequence.
+Pass the address text you want to parse. The package does not search arbitrary
+prose or an email signature to locate an address.
 
-The parser validates grammar, known locality names, locality/state
+The parser validates grammar, known locality names, locality and state
 compatibility, and four-digit postcode shape. It does not prove that a street
 address exists, validate that a postcode belongs to a locality, query
 Australia Post's Postal Address File, handle international addresses, or
