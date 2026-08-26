@@ -6,9 +6,6 @@ g-naf_*/
 gnaf-gen
 *.exe
 
-# Test artifacts
-testdata/gnaf_addresses.json
-
 # IDE
 .idea/
 .vscode/

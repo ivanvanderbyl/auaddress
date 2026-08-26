@@ -1,0 +1,27 @@
+name: Observe merged PR
+run-name: "Release PR #${{ github.event.pull_request.number }}"
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Record release eligibility
+        env:
+          MERGED: ${{ github.event.pull_request.merged }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "$MERGED" == "true" ]]; then
+            echo "Pull request #$PULL_REQUEST is eligible for release reconciliation."
+          else
+            echo "Pull request #$PULL_REQUEST closed without merging."
+          fi

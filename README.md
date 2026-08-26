@@ -1,241 +1,320 @@
 # auaddress
 
-A fast Go package for parsing Australian addresses according to Australia Post addressing standards, with reference data sourced from G-NAF (Geocoded National Address File).
+Parse complete or partial Australian addresses from Go or the command line.
+`auaddress` normalises street, postal, locality, state, and postcode components
+without a network connection.
 
-## Features
+## Try the command
 
-- **Fast**: ~470,000 addresses/second (2.1μs per address)
-- **Accurate**: 100% locality/state/postcode accuracy, 99%+ street parsing accuracy
-- **Complete**: Supports all G-NAF street types, unit types, and level types
-- **Standards-compliant**: Normalises to AusPost presentation format
+Install the binary with Go:
 
-## Scope
+```bash
+go install github.com/ivanvanderbyl/auaddress/cmd/parse-address@latest
+```
 
-This library handles **single domestic destination address blocks** with lines separated by `\n`. It normalises reasonably well-formed AU addresses to AusPost's standard format.
+Parse an address directly:
 
-### What this library does
+```console
+$ parse-address 'Level 4, 54 Wellington Street, Collingwood'
+L 4 54 WELLINGTON ST
+COLLINGWOOD
+```
 
-- Parses address components (locality, state, postcode, street details, unit/level, PO Box)
-- Normalises addresses to AusPost presentation standards (uppercase, standard abbreviations)
-- Validates syntactic correctness (valid state codes, 4-digit postcodes)
+Pass one positional input containing one or more independently completed
+addresses.
 
-### What this library does NOT do
+Add `--json` for structured output. The flag can appear before or after the
+input:
 
-- Validate that an address actually exists or is deliverable
-- Match against Australia Post's PAF (Postal Address File)
-- Handle international addresses
-- Guarantee AMAS compliance without external validation
+```console
+$ parse-address 'Level 4, 54 Wellington Street, Collingwood' --json
+[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]
+```
 
-For address existence validation, you'll need an external service like Australia Post's Address Validation API or an AMAS-certified solution.
+The root command always returns a JSON array, including when it finds one
+address.
 
-## Installation
+Parse multiple addresses by separating them with newlines:
+
+```console
+$ parse-address 'Level 4, 54 Wellington St, Collingwood\nPO Box 234, Melbourne' --json | jq
+[
+  {
+    "deliveryPoints": [
+      {
+        "kind": "street",
+        "level": "L 4",
+        "streetNumber": "54",
+        "streetName": "WELLINGTON",
+        "streetType": "ST"
+      }
+    ],
+    "locality": "COLLINGWOOD"
+  },
+  {
+    "deliveryPoints": [
+      {
+        "kind": "postal",
+        "postalType": "PO BOX",
+        "postalNumber": "234"
+      }
+    ],
+    "locality": "MELBOURNE"
+  }
+]
+```
+
+The command accepts both literal `\n` sequences and actual newline characters
+in the positional input. Without `--json`, it separates formatted addresses
+with one blank line.
+
+## Use the Go package
 
 ```bash
 go get github.com/ivanvanderbyl/auaddress
 ```
-
-## Usage
-
-### Basic Parsing
 
 ```go
 package main
 
 import (
     "fmt"
+    "log"
+
     "github.com/ivanvanderbyl/auaddress"
 )
 
 func main() {
-    addr, err := auaddress.Parse(`John Smith
-123 Main Street
-SYDNEY NSW 2000`)
-    
+    address, err := auaddress.Parse("3A/45 High Street, Richmond")
     if err != nil {
-        panic(err)
+        log.Fatal(err)
     }
-    
-    fmt.Printf("Street: %s %s %s\n", addr.StreetNumber, addr.StreetName, addr.StreetType)
-    // Output: Street: 123 MAIN ST
-    
-    fmt.Printf("Locality: %s %s %s\n", addr.Locality, addr.State, addr.Postcode)
-    // Output: Locality: SYDNEY NSW 2000
+
+    fmt.Println(address.Unit)
+    fmt.Println(address.FormatDeliveryLine())
+    fmt.Println(address.Locality)
 }
 ```
 
-### Unit/Level Addresses
+Output:
 
-```go
-addr, _ := auaddress.Parse(`Jane Doe
-Unit 5, 100 George Street
-BRISBANE QLD 4000`)
-
-fmt.Println(addr.Unit)         // "UNIT 5"
-fmt.Println(addr.StreetNumber) // "100"
-fmt.Println(addr.StreetName)   // "GEORGE"
-fmt.Println(addr.StreetType)   // "ST"
+```text
+3A
+3A 45 HIGH ST
+RICHMOND
 ```
 
-### Slash Notation
+## How an address is recognised
 
-```go
-addr, _ := auaddress.Parse(`Tenant
-3A/45 High Street
-MELBOURNE VIC 3000`)
+The core grammar is:
 
-fmt.Println(addr.Unit)         // "3A"
-fmt.Println(addr.StreetNumber) // "45"
+```text
+Address       := DeliveryPoint+ Locality State? Postcode?
+DeliveryPoint := StreetDelivery | PostalDelivery
 ```
 
-### PO Box Addresses
+Parsing is greedy and left to right. Commas and line breaks are soft
+boundaries. A known locality completes an address; state and postcode add
+specificity but are optional. This makes `123 Main Street, Richmond` valid and
+`123 Main Street` invalid.
 
-```go
-addr, _ := auaddress.Parse(`Company Pty Ltd
-PO Box 1234
-SYDNEY NSW 2000`)
+Delivery points stay in encounter order. A street and PO box that share one
+locality form one address:
 
-fmt.Println(addr.IsPoBox)     // true
-fmt.Println(addr.PoBoxType)   // "PO BOX"
-fmt.Println(addr.PoBoxNumber) // "1234"
+```console
+$ parse-address '123 Main Street, PO Box 42, Richmond VIC 3121'
+123 MAIN ST
+PO BOX 42
+RICHMOND VIC 3121
 ```
 
-### Formatting
+The parser normalises common forms as it reads them, including `Street` to
+`ST`, `Level 4` and `L4` to `L 4`, and `P.O. Box` to `PO BOX`.
 
-```go
-addr, _ := auaddress.Parse(`john smith
-123 main street
-sydney nsw 2000`)
+## Compare addresses
 
-fmt.Println(addr.Format())
-// Output:
-// JOHN SMITH
-// 123 MAIN ST
-// SYDNEY NSW 2000
+Use `compare` to compare normalised components rather than raw strings:
+
+```console
+$ parse-address compare 'L4 54 Wellington Street, Collingwood' 'Level 4, 54 Wellington St, Collingwood'
+exact
 ```
 
-### Strict Mode
+A missing unit, level, state, or postcode produces a partial match when all
+populated components agree:
 
-By default, the parser is lenient and collects errors in the `Errors` slice while still returning a partial result. Use strict mode to fail immediately on validation errors:
+```console
+$ parse-address compare '54 Wellington Street, Collingwood' '54 Wellington St, Collingwood VIC 3066'
+partial
+matched through: locality
+missing from left: state, postcode
+```
+
+Conflicting populated components, such as different street numbers or
+localities, produce `no match`. A valid `no match` result still exits with
+status zero. Add `--json` to receive the kind, matched component, missing
+components, and deterministic keys as camelCase JSON fields.
+
+The same comparison is available from Go:
+
+```go
+left, _ := auaddress.Parse("123 Main Street, Richmond")
+right, _ := auaddress.Parse("123 Main St, Richmond VIC 3121")
+
+match := auaddress.CompareAddresses(left, right)
+fmt.Println(match.Kind == auaddress.PartialMatch)                 // true
+fmt.Println(match.MatchedThrough == auaddress.MatchLocality)     // true
+fmt.Println(match.MissingFromLeft[0] == auaddress.MatchState)    // true
+fmt.Println(match.MissingFromLeft[1] == auaddress.MatchPostcode) // true
+```
+
+`ComparisonKey` exposes the canonical components as a deterministic string.
+Comparison does not use edit distance, phonetic matching, or typo correction.
+
+## Parse more than one address from Go
+
+Call `ParseAll` to parse multiple addresses in Go:
+
+```go
+addresses, err := auaddress.ParseAll(`School Infrastructure NSW
+Level 8, 259 George Street, Sydney, NSW 2000
+GPO Box 33, Sydney, NSW 2001`)
+if err != nil {
+    return err
+}
+
+fmt.Println(len(addresses))         // 2
+fmt.Println(addresses[0].Postcode)  // 2000
+fmt.Println(addresses[1].PoBoxType) // GPO BOX
+fmt.Println(addresses[1].Postcode)  // 2001
+```
+
+Physical lines do not determine the result count. Each independently
+locality-terminated delivery sequence becomes one result. Shared recipient or
+organisation lines are copied to each result as `NameLines`.
+
+`DeliveryPoints` is the canonical ordered representation when encounter order
+or multiple delivery points matter. The flat street and PO box fields remain
+populated for compatibility and represent the first delivery point of each
+kind.
+
+## Handle parsing failures
+
+The default parser is lenient. It returns recognised structure and records the
+first grammar or validation failure in `ParsedAddress.Errors`:
+
+```go
+address, err := auaddress.Parse(input)
+if err != nil {
+    return err // Empty input is always returned directly.
+}
+if len(address.Errors) > 0 {
+    // Inspect a lenient parsing failure.
+}
+```
+
+Strict mode returns the first failure directly. With `ParseAll`, it also
+returns any complete addresses parsed before that failure:
 
 ```go
 parser := auaddress.NewParser(auaddress.WithStrict(true))
-addr, err := parser.Parse("Invalid Address")
-if err != nil {
-    // Handle error
-}
+addresses, err := parser.ParseAll(input)
 ```
 
-### Validation
+An address is valid when it has no recorded errors, at least one delivery
+point, and a recognised locality:
 
 ```go
-addr, _ := auaddress.Parse(input)
-
-if addr.IsValid() {
-    // No parsing errors, has valid state and postcode
-}
-
-if addr.HasDeliveryPoint() {
-    // Has either street address or PO Box
+if address.IsValid() {
+    // The input satisfies the grammar.
 }
 ```
 
-## Performance
+The command-line tool uses strict parsing. Failures go to standard error and
+exit non-zero. If any address fails, the command writes no successful addresses
+to standard output. With `--json`, failures use the same machine-readable mode:
 
-Benchmarked on Apple M4 Max:
-
-```
-BenchmarkGNAFParsing-16    575476    2138 ns/op    783 B/op    14 allocs/op
-```
-
-- **~470,000 addresses/second**
-- **2.1 microseconds per address**
-- **783 bytes allocated per parse**
-
-Tested against 5,000 real addresses from G-NAF November 2025:
-
-| Metric | Accuracy |
-|--------|----------|
-| Locality/State/Postcode | 100% |
-| Street Number | 99.8% |
-| Street Name | 99.2% |
-| Street Type | 99.4% |
-| Unit Parsing | 99.3% |
-
-## Parsed Address Structure
-
-```go
-type ParsedAddress struct {
-    RawLines []string    // Original input lines
-
-    // PO Box / Special delivery
-    IsPoBox     bool
-    PoBoxType   string   // "PO BOX", "GPO BOX", "LOCKED BAG", etc.
-    PoBoxNumber string
-
-    // Street address components
-    Unit         string  // "UNIT 5", "3A", etc.
-    Level        string  // "L 10", "FL 3", etc.
-    StreetNumber string  // "123", "10-12", "45A"
-    StreetName   string  // "MAIN", "KING GEORGE"
-    StreetType   string  // "ST", "RD", "AV", etc.
-    StreetSuffix string  // "N", "S", "E", "W", etc.
-
-    BuildingName string
-
-    // Locality line
-    Locality string  // "SYDNEY", "ALICE SPRINGS"
-    State    string  // "NSW", "VIC", "QLD", "SA", "WA", "TAS", "ACT", "NT"
-    Postcode string  // 4 digits
-
-    // Name/addressee lines
-    NameLines []string
-
-    // Parsing errors (in lenient mode)
-    Errors []error
-}
+```json
+{"error":"invalid address format"}
 ```
 
-## Supported Formats
+## Supported components
 
-### States
-NSW, VIC, QLD, SA, WA, TAS, ACT, NT
+- States and territories: full names and abbreviations, normalised to NSW, VIC,
+  QLD, SA, WA, TAS, ACT, and NT.
+- Street types: G-NAF forms including STREET/ST, ROAD/RD, AVENUE/AV,
+  DRIVE/DR, PLACE/PL, COURT/CT, and their normalised abbreviations.
+- Unit types: UNIT, FLAT, APARTMENT/APT, VILLA, LOT, SHOP, SUITE, ROOM,
+  OFFICE, FACTORY, WAREHOUSE, and related G-NAF forms.
+- Level types: LEVEL/L, FLOOR/FL, GROUND/G, BASEMENT/B, MEZZANINE/M,
+  LOWER GROUND/LG, UPPER GROUND/UG, and related forms.
+- Postal delivery types: PO BOX, GPO BOX, LOCKED BAG, PRIVATE BAG, REPLY
+  PAID, RMB, CMB, RSD, MS, CMA, CPA, and CARE PO.
 
-### Street Types
-Complete list from G-NAF including: STREET/ST, ROAD/RD, AVENUE/AV, DRIVE/DR, PLACE/PL, COURT/CT, CIRCUIT/CCT, CRESCENT/CR, TERRACE/TCE, PARADE/PDE, HIGHWAY/HWY, ESPLANADE/ESP, BOULEVARD/BVD, LANE, WAY, CLOSE/CL, and 200+ more.
+## Locality data
 
-### Unit Prefixes
-UNIT, FLAT, APARTMENT/APT, VILLA, LOT, SHOP, SUITE, ROOM, OFFICE, FACTORY, WAREHOUSE, SHED, KIOSK, TOWNHOUSE, PENTHOUSE, STUDIO, and more.
+The package embeds 21,852 normalised primary and alias locality names from the
+Geoscape Geocoded National Address File (G-NAF). Each name stores an eight-bit
+state mask, so duplicate locality names across states occupy one index entry.
+Parsing does not need a network connection.
 
-### Level Prefixes
-LEVEL/L, FLOOR/FL, GROUND/G, BASEMENT/B, MEZZANINE/M, LOWER GROUND/LG, UPPER GROUND/UG, PODIUM, ROOFTOP, and more.
-
-### Special Delivery Types
-PO BOX, GPO BOX, LOCKED BAG, PRIVATE BAG, REPLY PAID, RMB, CMB, RSD, MS, CMA, CPA, CARE PO
-
-## G-NAF Test Data
-
-The parser is validated against real addresses from G-NAF. To regenerate the test dataset:
-
-1. Download G-NAF from [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf)
-2. Extract to the repository root
-3. Run the generator:
+Refresh the index from the latest GDA2020 release published in the official
+data.gov.au package metadata:
 
 ```bash
-go build ./cmd/gnaf-gen
-./gnaf-gen -gnaf "g-naf_nov25_allstates_gda94_psv_1021/G-NAF/G-NAF NOVEMBER 2025/Standard" \
-    -output testdata/gnaf_addresses.json \
-    -count 10000
+task gnaf:update
 ```
 
-The G-NAF dataset is excluded from git via `.gitignore`.
+The generator reads only the locality tables from the remote ZIP by using HTTP
+range requests. It records the resolved archive URL in
+`localities_generated.go`.
+
+## Scope and limitations
+
+Pass the address text you want to parse. The package does not search arbitrary
+prose or an email signature to locate an address.
+
+The parser validates grammar, known locality names, locality and state
+compatibility, and four-digit postcode shape. It does not prove that a street
+address exists, validate that a postcode belongs to a locality, query
+Australia Post's Postal Address File, handle international addresses, or
+provide Address Matching Approval System certification.
+
+## Development and releases
+
+```bash
+task test
+task gnaf:update
+task gnaf:verify
+task release VERSION=v1.2.3
+task release:push VERSION=v1.2.3
+```
+
+Every pull request merged into `main` creates the next patch version tag and a
+GitHub Release with generated notes. While a pull request is open, its workflow
+summary shows the proposed release tag.
+
+`task test` checks Go formatting, runs `go vet`, runs all Go tests, and tests
+the release-version calculator and ordered release reconciliation.
+
+`gnaf:verify` regenerates the locality index from the source URL recorded in the
+generated file and compares it byte for byte.
+
+`release` and `release:push` remain available for manual recovery, rather than
+the normal release process. `release` runs the G-NAF check, requires a clean
+worktree, and creates an annotated local semantic-version tag. It never pushes.
+It also does not create a GitHub Release. `release:push` is the separate explicit
+push step; rerun release reconciliation afterward to publish the matching
+GitHub Release. A manually selected version must be greater than the preceding
+release, after which automatic releases continue by incrementing its patch.
 
 ## References
 
-- [Australia Post Addressing Guidelines](https://auspost.com.au/sending/guidelines/addressing-guidelines)
-- [Australia Post Addressing Standards](https://auspost.com.au/content/dam/auspost_corp/media/documents/australia-post-addressing-standards-1999.pdf)
-- [AMAS Developer Guide](https://auspost.com.au/content/dam/auspost_corp/media/documents/amas-developer-guide.pdf)
-- [G-NAF - Geocoded National Address File](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf)
+- [Australia Post addressing guidelines](https://auspost.com.au/sending/guidelines/addressing-guidelines)
+- [Australia Post addressing standards](https://auspost.com.au/content/dam/auspost_corp/media/documents/australia-post-addressing-standards-1999.pdf)
+- [AMAS developer guide](https://auspost.com.au/content/dam/auspost_corp/media/documents/amas-developer-guide.pdf)
+- [Geocoded National Address File](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf)
 
-## License
+## Licence
 
 MIT

@@ -307,3 +307,42 @@ func BenchmarkGNAFParsing(b *testing.B) {
 		_, _ = Parse(addr.FormattedAddress)
 	}
 }
+
+func BenchmarkTokenGrammar(b *testing.B) {
+	benchmarks := []struct {
+		name     string
+		input    string
+		parseAll bool
+	}{
+		{
+			name:  "partial_single_line",
+			input: "123 Main Street, Richmond",
+		},
+		{
+			name:  "split_across_lines",
+			input: "123 Main\nStreet\nRichmond\nVIC 3121",
+		},
+		{
+			name:  "mixed_delivery_points",
+			input: "123 Main Street, PO Box 42, Richmond VIC 3121",
+		},
+		{
+			name:     "multiple_addresses",
+			input:    "Level 8, 259 George Street, Sydney NSW 2000\nGPO Box 33, Sydney NSW 2001",
+			parseAll: true,
+		},
+	}
+
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if benchmark.parseAll {
+					_, _ = ParseAll(benchmark.input)
+					continue
+				}
+				_, _ = Parse(benchmark.input)
+			}
+		})
+	}
+}

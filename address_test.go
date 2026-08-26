@@ -280,19 +280,19 @@ func TestParseNormalization(t *testing.T) {
 		input string
 	}{
 		{
-			name: "Windows line endings",
+			name:  "Windows line endings",
 			input: "John Smith\r\n123 Main Street\r\nSYDNEY NSW 2000",
 		},
 		{
-			name: "Mixed line endings",
+			name:  "Mixed line endings",
 			input: "John Smith\r123 Main Street\nSYDNEY NSW 2000",
 		},
 		{
-			name: "Extra whitespace",
+			name:  "Extra whitespace",
 			input: "  John Smith  \n  123   Main   Street  \n  SYDNEY   NSW   2000  ",
 		},
 		{
-			name: "Trailing punctuation",
+			name:  "Trailing punctuation",
 			input: "John Smith,\n123 Main Street.\nSYDNEY NSW 2000,",
 		},
 	}
@@ -416,6 +416,36 @@ SYDNEY NSW 2000`,
 	}
 }
 
+func TestFormatMixedDeliveryPoints(t *testing.T) {
+	addr := &ParsedAddress{
+		DeliveryPoints: []DeliveryPoint{
+			{
+				Kind: DeliveryPointStreet,
+				Street: StreetDelivery{
+					StreetNumber: "123",
+					StreetName:   "MAIN",
+					StreetType:   "ST",
+				},
+			},
+			{
+				Kind: DeliveryPointPostal,
+				Postal: PostalDelivery{
+					Type:   "PO BOX",
+					Number: "42",
+				},
+			},
+		},
+		Locality: "RICHMOND",
+	}
+
+	assertStringSliceEqual(t, "FormatDeliveryLines", []string{
+		"123 MAIN ST",
+		"PO BOX 42",
+	}, addr.FormatDeliveryLines())
+	assertEqual(t, "FormatDeliveryLine", "123 MAIN ST", addr.FormatDeliveryLine())
+	assertEqual(t, "Format", "123 MAIN ST\nPO BOX 42\nRICHMOND", addr.Format())
+}
+
 func TestIsValid(t *testing.T) {
 	t.Run("valid address returns true", func(t *testing.T) {
 		addr, _ := Parse("John Smith\n123 Main St\nSYDNEY NSW 2000")
@@ -429,6 +459,27 @@ func TestIsValid(t *testing.T) {
 		addr, _ := parser.Parse("John Smith\n123 Main St\nSYDNEY XYZ 2000")
 		if addr.IsValid() {
 			t.Error("expected invalid address due to invalid state")
+		}
+	})
+
+	t.Run("street and locality are valid without state or postcode", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street, Richmond")
+		if !addr.IsValid() {
+			t.Errorf("expected locality-terminated partial address to be valid: %v", addr.Errors)
+		}
+	})
+
+	t.Run("postal delivery and locality are valid without state or postcode", func(t *testing.T) {
+		addr, _ := Parse("PO Box 42, Richmond")
+		if !addr.IsValid() {
+			t.Errorf("expected locality-terminated postal address to be valid: %v", addr.Errors)
+		}
+	})
+
+	t.Run("delivery without locality is invalid", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street")
+		if addr.IsValid() {
+			t.Error("expected address without locality to be invalid")
 		}
 	})
 }
@@ -447,15 +498,29 @@ func TestHasDeliveryPoint(t *testing.T) {
 			t.Error("expected delivery point for PO Box")
 		}
 	})
+
+	t.Run("mixed canonical deliveries have delivery point", func(t *testing.T) {
+		addr, _ := Parse("123 Main Street, PO Box 42, Richmond")
+		if !addr.HasDeliveryPoint() {
+			t.Error("expected mixed canonical deliveries to have a delivery point")
+		}
+	})
+
+	t.Run("manually constructed legacy street has delivery point", func(t *testing.T) {
+		addr := &ParsedAddress{StreetName: "MAIN"}
+		if !addr.HasDeliveryPoint() {
+			t.Error("expected legacy street fields to remain supported")
+		}
+	})
 }
 
 func TestComplexUnitFormats(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		unit     string
-		level    string
-		number   string
+		name   string
+		input  string
+		unit   string
+		level  string
+		number string
 	}{
 		{
 			name:   "apartment prefix",
@@ -582,6 +647,274 @@ func TestMultiWordStreetNames(t *testing.T) {
 			}
 
 			assertEqual(t, "StreetName", tt.streetName, addr.StreetName)
+		})
+	}
+}
+
+func TestParsePartialAddress(t *testing.T) {
+	addr, err := Parse("123 Main Street, Richmond")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertEqual(t, "StreetNumber", "123", addr.StreetNumber)
+	assertEqual(t, "StreetName", "MAIN", addr.StreetName)
+	assertEqual(t, "StreetType", "ST", addr.StreetType)
+	assertEqual(t, "Locality", "RICHMOND", addr.Locality)
+	assertEqual(t, "State", "", addr.State)
+	assertEqual(t, "Postcode", "", addr.Postcode)
+	if len(addr.Errors) != 0 {
+		t.Fatalf("expected no parsing errors, got %v", addr.Errors)
+	}
+}
+
+func TestParseSplitAddress(t *testing.T) {
+	addr, err := Parse("123 Main\nStreet\nRichmond\nVIC 3121")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertEqual(t, "StreetNumber", "123", addr.StreetNumber)
+	assertEqual(t, "StreetName", "MAIN", addr.StreetName)
+	assertEqual(t, "StreetType", "ST", addr.StreetType)
+	assertEqual(t, "Locality", "RICHMOND", addr.Locality)
+	assertEqual(t, "State", "VIC", addr.State)
+	assertEqual(t, "Postcode", "3121", addr.Postcode)
+}
+
+func TestParseMixedDeliveryPoints(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		kinds []DeliveryPointKind
+	}{
+		{
+			name:  "street then postal",
+			input: "123 Main Street, PO Box 42, Richmond VIC 3121",
+			kinds: []DeliveryPointKind{DeliveryPointStreet, DeliveryPointPostal},
+		},
+		{
+			name:  "postal then street",
+			input: "Company\nPO Box 42\n123 Main Street\nRichmond VIC 3121",
+			kinds: []DeliveryPointKind{DeliveryPointPostal, DeliveryPointStreet},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(addr.DeliveryPoints) != len(tt.kinds) {
+				t.Fatalf("expected %d delivery points, got %d: %#v", len(tt.kinds), len(addr.DeliveryPoints), addr.DeliveryPoints)
+			}
+			for i, kind := range tt.kinds {
+				if addr.DeliveryPoints[i].Kind != kind {
+					t.Errorf("delivery point %d: expected kind %d, got %d", i, kind, addr.DeliveryPoints[i].Kind)
+				}
+			}
+			assertEqual(t, "StreetNumber", "123", addr.StreetNumber)
+			assertEqual(t, "PoBoxType", "PO BOX", addr.PoBoxType)
+			assertEqual(t, "PoBoxNumber", "42", addr.PoBoxNumber)
+			assertBool(t, "IsPoBox", true, addr.IsPoBox)
+			assertEqual(t, "Locality", "RICHMOND", addr.Locality)
+			assertEqual(t, "State", "VIC", addr.State)
+			assertEqual(t, "Postcode", "3121", addr.Postcode)
+			if tt.name == "postal then street" {
+				assertStringSliceEqual(t, "NameLines", []string{"Company"}, addr.NameLines)
+			}
+		})
+	}
+}
+
+func TestTokenGrammarStrictErrors(t *testing.T) {
+	parser := NewParser(WithStrict(true))
+	tests := []struct {
+		name     string
+		input    string
+		expected error
+	}{
+		{"missing locality", "123 Main Street", ErrInvalidAddress},
+		{"unknown locality", "123 Main Street, Not A Locality", ErrInvalidAddress},
+		{"incompatible state", "123 Main Street, Richmond NT", ErrNoState},
+		{"malformed postcode", "123 Main Street, Richmond VIC ABCD", ErrNoPostcode},
+		{"trailing input", "123 Main Street, Richmond VIC 3121 EXTRA", ErrInvalidAddress},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parser.Parse(tt.input)
+			if err != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, err)
+			}
+		})
+	}
+}
+
+func TestFullStateNamesNormalize(t *testing.T) {
+	parser := NewParser(WithStrict(true))
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"New South Wales", "1 George Street, Sydney New South Wales 2000", "NSW"},
+		{"Victoria", "1 Collins Street, Melbourne Victoria 3000", "VIC"},
+		{"Queensland", "1 Queen Street, Brisbane Queensland 4000", "QLD"},
+		{"South Australia", "1 King William Street, Adelaide South Australia 5000", "SA"},
+		{"Western Australia", "1 Hay Street, Perth Western Australia 6000", "WA"},
+		{"Tasmania", "1 Macquarie Street, Hobart Tasmania 7000", "TAS"},
+		{"Australian Capital Territory", "1 Northbourne Avenue, Canberra Australian Capital Territory 2600", "ACT"},
+		{"Northern Territory", "1 Smith Street, Darwin Northern Territory 0800", "NT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			address, err := parser.Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse returned an error: %v", err)
+			}
+			assertEqual(t, "State", tt.expected, address.State)
+		})
+	}
+}
+
+func TestParseAllIndependentAddresses(t *testing.T) {
+	input := `ACME PTY LTD
+Level 8, 259 George Street, Sydney, NSW 2000
+GPO Box 33, Sydney, NSW 2001`
+
+	addresses, err := ParseAll(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 2 {
+		t.Fatalf("expected 2 addresses, got %d: %#v", len(addresses), addresses)
+	}
+
+	assertStringSliceEqual(t, "first NameLines", []string{"ACME PTY LTD"}, addresses[0].NameLines)
+	assertEqual(t, "first Level", "L 8", addresses[0].Level)
+	assertEqual(t, "first StreetNumber", "259", addresses[0].StreetNumber)
+	assertEqual(t, "first StreetName", "GEORGE", addresses[0].StreetName)
+	assertEqual(t, "first Locality", "SYDNEY", addresses[0].Locality)
+	assertEqual(t, "first Postcode", "2000", addresses[0].Postcode)
+
+	assertStringSliceEqual(t, "second NameLines", []string{"ACME PTY LTD"}, addresses[1].NameLines)
+	assertEqual(t, "second PoBoxType", "GPO BOX", addresses[1].PoBoxType)
+	assertEqual(t, "second PoBoxNumber", "33", addresses[1].PoBoxNumber)
+	assertEqual(t, "second Locality", "SYDNEY", addresses[1].Locality)
+	assertEqual(t, "second Postcode", "2001", addresses[1].Postcode)
+}
+
+func TestParseAllIgnoresPhysicalLineLayout(t *testing.T) {
+	input := "259 George\nStreet Sydney NSW 2000 GPO\nBox 33 Sydney NSW\n2001"
+
+	addresses, err := ParseAll(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 2 {
+		t.Fatalf("expected 2 addresses, got %d", len(addresses))
+	}
+	assertEqual(t, "first Postcode", "2000", addresses[0].Postcode)
+	assertEqual(t, "second Postcode", "2001", addresses[1].Postcode)
+}
+
+func TestParseAllKeepsSharedLocalityDeliveryPointsTogether(t *testing.T) {
+	addresses, err := ParseAll("123 Main Street, PO Box 42, Richmond VIC 3121")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 1 {
+		t.Fatalf("expected 1 address, got %d", len(addresses))
+	}
+	if len(addresses[0].DeliveryPoints) != 2 {
+		t.Fatalf("expected 2 delivery points, got %d", len(addresses[0].DeliveryPoints))
+	}
+}
+
+func TestParseReturnsFirstAddress(t *testing.T) {
+	addr, err := Parse("259 George Street Sydney NSW 2000 GPO Box 33 Sydney NSW 2001")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertEqual(t, "StreetNumber", "259", addr.StreetNumber)
+	assertEqual(t, "Postcode", "2000", addr.Postcode)
+}
+
+func TestParseAllStrictRejectsUnexplainedText(t *testing.T) {
+	parser := NewParser(WithStrict(true))
+	addresses, err := parser.ParseAll("259 George Street Sydney NSW 2000 UNEXPLAINED GPO Box 33 Sydney NSW 2001")
+	if err != ErrInvalidAddress {
+		t.Fatalf("expected ErrInvalidAddress, got %v", err)
+	}
+	if len(addresses) != 1 {
+		t.Fatalf("expected successfully parsed prefix address, got %d", len(addresses))
+	}
+}
+
+func TestParseAllOptionalTailsBeforeAnotherAddress(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		firstState     string
+		firstPostcode  string
+		secondState    string
+		secondPostcode string
+	}{
+		{
+			name:        "states without postcodes",
+			input:       "123 Main Street Sydney NSW 45 Queen Street Melbourne VIC",
+			firstState:  "NSW",
+			secondState: "VIC",
+		},
+		{
+			name:  "localities without states or postcodes",
+			input: "123 Main Street Sydney 45 Queen Street Melbourne",
+		},
+		{
+			name:           "first state only and complete second tail",
+			input:          "123 Main Street Sydney NSW 45 Queen Street Melbourne VIC 3000",
+			firstState:     "NSW",
+			secondState:    "VIC",
+			secondPostcode: "3000",
+		},
+		{
+			name:        "four digit next street number after state",
+			input:       "123 Main Street Sydney NSW 1000 Queen Street Melbourne VIC",
+			firstState:  "NSW",
+			secondState: "VIC",
+		},
+		{
+			name:  "four digit next street number after locality",
+			input: "123 Main Street Sydney 1000 Queen Street Melbourne",
+		},
+		{
+			name:           "postcode before four digit next street number",
+			input:          "123 Main Street Sydney NSW 2000 1000 Queen Street Melbourne VIC 3000",
+			firstState:     "NSW",
+			firstPostcode:  "2000",
+			secondState:    "VIC",
+			secondPostcode: "3000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addresses, err := ParseAll(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(addresses) != 2 {
+				t.Fatalf("expected 2 addresses, got %d: %#v", len(addresses), addresses)
+			}
+			assertEqual(t, "first Locality", "SYDNEY", addresses[0].Locality)
+			assertEqual(t, "first State", tt.firstState, addresses[0].State)
+			assertEqual(t, "first Postcode", tt.firstPostcode, addresses[0].Postcode)
+			assertEqual(t, "second Locality", "MELBOURNE", addresses[1].Locality)
+			assertEqual(t, "second State", tt.secondState, addresses[1].State)
+			assertEqual(t, "second Postcode", tt.secondPostcode, addresses[1].Postcode)
 		})
 	}
 }

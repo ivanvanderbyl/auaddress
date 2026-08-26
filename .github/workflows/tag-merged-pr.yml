@@ -1,0 +1,36 @@
+name: Preview release tag
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Fetch release tags
+        run: git fetch --force --tags origin
+
+      - name: Calculate proposed version
+        id: version
+        run: python3 scripts/gh/determine_highest_version_prefix.py
+
+      - name: Summarize proposed release
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Proposed release tag: \`v${NEXT_VERSION}\` if this pull request merges to \`main\`." >> "$GITHUB_STEP_SUMMARY"

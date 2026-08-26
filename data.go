@@ -1,14 +1,22 @@
 package auaddress
 
-var validStates = map[string]struct{}{
-	"NSW": {},
-	"VIC": {},
-	"QLD": {},
-	"SA":  {},
-	"WA":  {},
-	"TAS": {},
-	"ACT": {},
-	"NT":  {},
+var stateTypes = map[string]string{
+	"NEW SOUTH WALES":              "NSW",
+	"NSW":                          "NSW",
+	"VICTORIA":                     "VIC",
+	"VIC":                          "VIC",
+	"QUEENSLAND":                   "QLD",
+	"QLD":                          "QLD",
+	"SOUTH AUSTRALIA":              "SA",
+	"SA":                           "SA",
+	"WESTERN AUSTRALIA":            "WA",
+	"WA":                           "WA",
+	"TASMANIA":                     "TAS",
+	"TAS":                          "TAS",
+	"AUSTRALIAN CAPITAL TERRITORY": "ACT",
+	"ACT":                          "ACT",
+	"NORTHERN TERRITORY":           "NT",
+	"NT":                           "NT",
 }
 
 var streetTypes = map[string]string{

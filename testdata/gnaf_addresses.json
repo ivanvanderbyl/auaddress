@@ -1,0 +1,80 @@
+[
+  {
+    "formatted_address": "School Infrastructure NSW\nLevel 8, 259 George Street\nSydney NSW 2000",
+    "level": "L 8",
+    "street_number": "259",
+    "street_name": "GEORGE",
+    "street_type": "ST",
+    "locality": "SYDNEY",
+    "state": "NSW",
+    "postcode": "2000"
+  },
+  {
+    "formatted_address": "440 Collins Street\nMelbourne VIC 3000",
+    "street_number": "440",
+    "street_name": "COLLINS",
+    "street_type": "ST",
+    "locality": "MELBOURNE",
+    "state": "VIC",
+    "postcode": "3000"
+  },
+  {
+    "formatted_address": "Level 30, 400 George Street\nBrisbane QLD 4000",
+    "level": "L 30",
+    "street_number": "400",
+    "street_name": "GEORGE",
+    "street_type": "ST",
+    "locality": "BRISBANE",
+    "state": "QLD",
+    "postcode": "4000"
+  },
+  {
+    "formatted_address": "Level 13, 1 King William Street\nAdelaide SA 5000",
+    "level": "L 13",
+    "street_number": "1",
+    "street_name": "KING WILLIAM",
+    "street_type": "ST",
+    "locality": "ADELAIDE",
+    "state": "SA",
+    "postcode": "5000"
+  },
+  {
+    "formatted_address": "Level 2, 66 St Georges Terrace\nPerth WA 6000",
+    "level": "L 2",
+    "street_number": "66",
+    "street_name": "ST GEORGES",
+    "street_type": "TCE",
+    "locality": "PERTH",
+    "state": "WA",
+    "postcode": "6000"
+  },
+  {
+    "formatted_address": "37-43 Liverpool Street\nHobart TAS 7000",
+    "street_number": "37-43",
+    "street_name": "LIVERPOOL",
+    "street_type": "ST",
+    "locality": "HOBART",
+    "state": "TAS",
+    "postcode": "7000"
+  },
+  {
+    "formatted_address": "Level 3, 220 London Circuit\nCanberra City ACT 2601",
+    "level": "L 3",
+    "street_number": "220",
+    "street_name": "LONDON",
+    "street_type": "CCT",
+    "locality": "CANBERRA CITY",
+    "state": "ACT",
+    "postcode": "2601"
+  },
+  {
+    "formatted_address": "Level 5, 68 The Esplanade\nDarwin NT 0800",
+    "level": "L 5",
+    "street_number": "68",
+    "street_name": "THE",
+    "street_type": "ESP",
+    "locality": "DARWIN",
+    "state": "NT",
+    "postcode": "0800"
+  }
+]

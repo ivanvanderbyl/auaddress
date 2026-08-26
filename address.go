@@ -2,20 +2,55 @@ package auaddress
 
 import (
 	"errors"
-	"regexp"
 	"strings"
 )
 
 var (
-	ErrNoPostcode      = errors.New("no valid postcode found")
-	ErrNoState         = errors.New("no valid state found")
-	ErrNoDeliveryLine  = errors.New("no delivery line found")
-	ErrInvalidAddress  = errors.New("invalid address format")
-	ErrEmptyAddress    = errors.New("empty address")
+	ErrNoPostcode     = errors.New("no valid postcode found")
+	ErrNoState        = errors.New("no valid state found")
+	ErrNoDeliveryLine = errors.New("no delivery line found")
+	ErrInvalidAddress = errors.New("invalid address format")
+	ErrEmptyAddress   = errors.New("empty address")
 )
 
+// DeliveryPointKind identifies a street or postal delivery point.
+type DeliveryPointKind uint8
+
+const (
+	// DeliveryPointStreet identifies a physical street delivery point.
+	DeliveryPointStreet DeliveryPointKind = iota + 1
+	// DeliveryPointPostal identifies a PO box, bag, or related postal delivery point.
+	DeliveryPointPostal
+)
+
+// StreetDelivery contains the canonical components of a street delivery point.
+type StreetDelivery struct {
+	Unit         string
+	Level        string
+	StreetNumber string
+	StreetName   string
+	StreetType   string
+	StreetSuffix string
+}
+
+// PostalDelivery contains the canonical type and identifier of a postal delivery point.
+type PostalDelivery struct {
+	Type   string
+	Number string
+}
+
+// DeliveryPoint preserves one parsed delivery point and its kind.
+type DeliveryPoint struct {
+	Kind   DeliveryPointKind
+	Street StreetDelivery
+	Postal PostalDelivery
+}
+
+// ParsedAddress contains canonical delivery points, locality details, and compatibility fields.
 type ParsedAddress struct {
 	RawLines []string
+
+	DeliveryPoints []DeliveryPoint
 
 	IsPoBox     bool
 	PoBoxType   string
@@ -38,18 +73,22 @@ type ParsedAddress struct {
 	Errors    []error
 }
 
+// Parser parses Australian address strings.
 type Parser struct {
 	strict bool
 }
 
+// Option configures a Parser.
 type Option func(*Parser)
 
+// WithStrict makes parsing return the first grammar or validation error directly.
 func WithStrict(strict bool) Option {
 	return func(p *Parser) {
 		p.strict = strict
 	}
 }
 
+// NewParser constructs a parser with the supplied options.
 func NewParser(opts ...Option) *Parser {
 	p := &Parser{
 		strict: false,
@@ -60,47 +99,58 @@ func NewParser(opts ...Option) *Parser {
 	return p
 }
 
+// Parse returns the first parsed address in raw.
 func Parse(raw string) (*ParsedAddress, error) {
 	return NewParser().Parse(raw)
 }
 
-func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
-	addr := &ParsedAddress{
-		Errors: make([]error, 0),
-	}
+// ParseAll returns every independently locality-terminated address in raw.
+func ParseAll(raw string) ([]*ParsedAddress, error) {
+	return NewParser().ParseAll(raw)
+}
 
+// Parse returns the first parsed address in raw using the parser's options.
+func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
+	addresses, err := p.ParseAll(raw)
+	if len(addresses) > 0 {
+		return addresses[0], err
+	}
+	return &ParsedAddress{Errors: make([]error, 0)}, err
+}
+
+// ParseAll returns every independently locality-terminated address using the parser's options.
+func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error) {
 	normalised := normalise(raw)
 	if normalised == "" {
-		return addr, ErrEmptyAddress
+		return nil, ErrEmptyAddress
 	}
 
 	lines := splitLines(normalised)
 	if len(lines) == 0 {
-		return addr, ErrEmptyAddress
+		return nil, ErrEmptyAddress
 	}
 
-	addr.RawLines = lines
-
-	if err := p.parseLastLine(addr, lines); err != nil {
-		if p.strict {
-			return addr, err
+	tokens, err := lexAddress(normalised)
+	if err == nil {
+		var addresses []*ParsedAddress
+		addresses, err = parseAddressSequence(tokens, normalised)
+		if err == nil || p.strict {
+			return addresses, err
 		}
-		addr.Errors = append(addr.Errors, err)
+		if len(addresses) == 0 {
+			addr := &ParsedAddress{RawLines: lines, Errors: []error{err}}
+			return []*ParsedAddress{addr}, nil
+		}
+		last := addresses[len(addresses)-1]
+		if len(last.Errors) == 0 || !errors.Is(last.Errors[len(last.Errors)-1], err) {
+			last.Errors = append(last.Errors, err)
+		}
+		return addresses, nil
 	}
-
-	if len(lines) >= 2 {
-		p.parseDeliveryLine(addr, lines[len(lines)-2])
-	} else if p.strict {
-		return addr, ErrNoDeliveryLine
-	} else {
-		addr.Errors = append(addr.Errors, ErrNoDeliveryLine)
+	if p.strict {
+		return nil, err
 	}
-
-	if len(lines) >= 3 {
-		addr.NameLines = lines[:len(lines)-2]
-	}
-
-	return addr, nil
+	return []*ParsedAddress{{RawLines: lines, Errors: []error{err}}}, nil
 }
 
 func normalise(raw string) string {
@@ -114,10 +164,22 @@ func normalise(raw string) string {
 	return s
 }
 
-var multiSpaceRegex = regexp.MustCompile(`[ \t]+`)
-
 func collapseSpaces(s string) string {
-	return multiSpaceRegex.ReplaceAllString(s, " ")
+	var result strings.Builder
+	result.Grow(len(s))
+	spacePending := false
+	for _, ch := range s {
+		if ch == ' ' || ch == '\t' {
+			spacePending = true
+			continue
+		}
+		if spacePending && result.Len() > 0 && ch != '\n' {
+			result.WriteByte(' ')
+		}
+		spacePending = false
+		result.WriteRune(ch)
+	}
+	return result.String()
 }
 
 func splitLines(s string) []string {
@@ -141,157 +203,6 @@ func trimPunctuation(s string) string {
 	return strings.TrimSpace(s)
 }
 
-var postcodeRegex = regexp.MustCompile(`^\d{4}$`)
-
-func (p *Parser) parseLastLine(addr *ParsedAddress, lines []string) error {
-	if len(lines) == 0 {
-		return ErrInvalidAddress
-	}
-
-	lastLine := strings.ToUpper(lines[len(lines)-1])
-	tokens := strings.Fields(lastLine)
-
-	if len(tokens) < 3 {
-		return ErrInvalidAddress
-	}
-
-	postcode := tokens[len(tokens)-1]
-	if !postcodeRegex.MatchString(postcode) {
-		return ErrNoPostcode
-	}
-	addr.Postcode = postcode
-
-	state := tokens[len(tokens)-2]
-	if _, ok := validStates[state]; !ok {
-		return ErrNoState
-	}
-	addr.State = state
-
-	localityTokens := tokens[:len(tokens)-2]
-	addr.Locality = strings.Join(localityTokens, " ")
-
-	return nil
-}
-
-func (p *Parser) parseDeliveryLine(addr *ParsedAddress, line string) {
-	line = strings.TrimSpace(line)
-	upperLine := strings.ToUpper(line)
-
-	if p.parsePoBox(addr, upperLine) {
-		return
-	}
-
-	p.parseStreetAddress(addr, line)
-}
-
-var poBoxPatterns = []struct {
-	pattern *regexp.Regexp
-	boxType string
-}{
-	{regexp.MustCompile(`(?i)^(LOCKED\s+BAG)\s+(.+)$`), "LOCKED BAG"},
-	{regexp.MustCompile(`(?i)^(PRIVATE\s+BAG)\s+(.+)$`), "PRIVATE BAG"},
-	{regexp.MustCompile(`(?i)^(GPO\s+BOX)\s+(.+)$`), "GPO BOX"},
-	{regexp.MustCompile(`(?i)^(G\.?P\.?O\.?\s*BOX)\s+(.+)$`), "GPO BOX"},
-	{regexp.MustCompile(`(?i)^(PO\s+BOX)\s+(.+)$`), "PO BOX"},
-	{regexp.MustCompile(`(?i)^(P\.?O\.?\s*BOX)\s+(.+)$`), "PO BOX"},
-	{regexp.MustCompile(`(?i)^(REPLY\s+PAID)\s+(.+)$`), "REPLY PAID"},
-	{regexp.MustCompile(`(?i)^(RMB)\s+(.+)$`), "RMB"},
-	{regexp.MustCompile(`(?i)^(CMB)\s+(.+)$`), "CMB"},
-	{regexp.MustCompile(`(?i)^(RSD)\s+(.+)$`), "RSD"},
-	{regexp.MustCompile(`(?i)^(MS)\s+(.+)$`), "MS"},
-	{regexp.MustCompile(`(?i)^(CMA)\s+(.+)$`), "CMA"},
-	{regexp.MustCompile(`(?i)^(CPA)\s+(.+)$`), "CPA"},
-	{regexp.MustCompile(`(?i)^(CARE\s+PO)\s+(.+)$`), "CARE PO"},
-}
-
-func (p *Parser) parsePoBox(addr *ParsedAddress, line string) bool {
-	for _, pattern := range poBoxPatterns {
-		matches := pattern.pattern.FindStringSubmatch(line)
-		if matches != nil {
-			addr.IsPoBox = true
-			addr.PoBoxType = pattern.boxType
-			addr.PoBoxNumber = strings.TrimSpace(matches[2])
-			return true
-		}
-	}
-	return false
-}
-
-var (
-	unitSlashNumberRegex = regexp.MustCompile(`^(\d+[A-Za-z]?)\s*/\s*(\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?)(.*)$`)
-	unitPrefixRegex      = regexp.MustCompile(`(?i)^(UNIT|FLAT|APT|APARTMENT|VILLA|LOT|SHOP|SH|SUITE|STE|ROOM|RM|OFFICE|OFF|FACTORY|FY|WAREHOUSE|WE|SHED|SD|KIOSK|KSK|TOWNHOUSE|TNHS|PENTHOUSE|PTHS)\s+(\d+[A-Za-z]?)\s*[,]?\s*(.*)$`)
-	levelPrefixRegex     = regexp.MustCompile(`(?i)^(LEVEL|LVL|L|FLOOR|FL)\s+(\d+[A-Za-z]?|G|B|M|P|LG|UG)\s*[,]?\s*(.*)$`)
-	streetNumberRegex    = regexp.MustCompile(`^(\d+[A-Za-z]?(?:\s*-\s*\d+[A-Za-z]?)?)\s+(.+)$`)
-)
-
-func (p *Parser) parseStreetAddress(addr *ParsedAddress, line string) {
-	remaining := line
-
-	if matches := unitSlashNumberRegex.FindStringSubmatch(remaining); matches != nil {
-		addr.Unit = strings.ToUpper(matches[1])
-		addr.StreetNumber = strings.ToUpper(strings.ReplaceAll(matches[2], " ", ""))
-		remaining = strings.TrimSpace(matches[3])
-	} else {
-		if matches := unitPrefixRegex.FindStringSubmatch(remaining); matches != nil {
-			unitType := strings.ToUpper(matches[1])
-			if normalised, ok := unitTypes[unitType]; ok {
-				addr.Unit = normalised + " " + strings.ToUpper(matches[2])
-			} else {
-				addr.Unit = unitType + " " + strings.ToUpper(matches[2])
-			}
-			remaining = strings.TrimSpace(matches[3])
-		}
-
-		if matches := levelPrefixRegex.FindStringSubmatch(remaining); matches != nil {
-			levelType := strings.ToUpper(matches[1])
-			if normalised, ok := levelTypes[levelType]; ok {
-				addr.Level = normalised + " " + strings.ToUpper(matches[2])
-			} else {
-				addr.Level = levelType + " " + strings.ToUpper(matches[2])
-			}
-			remaining = strings.TrimSpace(matches[3])
-		}
-	}
-
-	if addr.StreetNumber == "" {
-		if matches := streetNumberRegex.FindStringSubmatch(remaining); matches != nil {
-			addr.StreetNumber = strings.ToUpper(strings.ReplaceAll(matches[1], " ", ""))
-			remaining = strings.TrimSpace(matches[2])
-		}
-	}
-
-	p.parseStreetNameAndType(addr, remaining)
-}
-
-func (p *Parser) parseStreetNameAndType(addr *ParsedAddress, s string) {
-	tokens := strings.Fields(strings.ToUpper(s))
-	if len(tokens) == 0 {
-		return
-	}
-
-	if len(tokens) >= 2 {
-		lastToken := tokens[len(tokens)-1]
-		if _, ok := streetSuffixes[lastToken]; ok {
-			if normalised, ok := streetSuffixes[lastToken]; ok {
-				addr.StreetSuffix = normalised
-			}
-			tokens = tokens[:len(tokens)-1]
-		}
-	}
-
-	if len(tokens) >= 1 {
-		lastToken := tokens[len(tokens)-1]
-		if normalised, ok := streetTypes[lastToken]; ok {
-			addr.StreetType = normalised
-			tokens = tokens[:len(tokens)-1]
-		}
-	}
-
-	if len(tokens) > 0 {
-		addr.StreetName = strings.Join(tokens, " ")
-	}
-}
-
 func (a *ParsedAddress) Format() string {
 	var lines []string
 
@@ -299,10 +210,7 @@ func (a *ParsedAddress) Format() string {
 		lines = append(lines, strings.ToUpper(name))
 	}
 
-	deliveryLine := a.FormatDeliveryLine()
-	if deliveryLine != "" {
-		lines = append(lines, deliveryLine)
-	}
+	lines = append(lines, a.FormatDeliveryLines()...)
 
 	localityLine := a.FormatLocalityLine()
 	if localityLine != "" {
@@ -313,34 +221,87 @@ func (a *ParsedAddress) Format() string {
 }
 
 func (a *ParsedAddress) FormatDeliveryLine() string {
-	if a.IsPoBox {
-		return a.PoBoxType + " " + a.PoBoxNumber
+	deliveryLines := a.FormatDeliveryLines()
+	if len(deliveryLines) == 0 {
+		return ""
 	}
 
+	return deliveryLines[0]
+}
+
+// FormatDeliveryLines formats every delivery point in encounter order.
+func (a *ParsedAddress) FormatDeliveryLines() []string {
+	if len(a.DeliveryPoints) == 0 {
+		if line := a.formatLegacyDeliveryLine(); line != "" {
+			return []string{line}
+		}
+		return nil
+	}
+
+	lines := make([]string, 0, len(a.DeliveryPoints))
+	for _, point := range a.DeliveryPoints {
+		var line string
+		switch point.Kind {
+		case DeliveryPointStreet:
+			line = formatStreetDelivery(point.Street)
+		case DeliveryPointPostal:
+			line = formatPostalDelivery(point.Postal)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	return lines
+}
+
+func (a *ParsedAddress) formatLegacyDeliveryLine() string {
+	if a.IsPoBox {
+		return formatPostalDelivery(PostalDelivery{
+			Type:   a.PoBoxType,
+			Number: a.PoBoxNumber,
+		})
+	}
+
+	return formatStreetDelivery(StreetDelivery{
+		Unit:         a.Unit,
+		Level:        a.Level,
+		StreetNumber: a.StreetNumber,
+		StreetName:   a.StreetName,
+		StreetType:   a.StreetType,
+		StreetSuffix: a.StreetSuffix,
+	})
+}
+
+func formatPostalDelivery(delivery PostalDelivery) string {
+	return strings.TrimSpace(strings.Join([]string{delivery.Type, delivery.Number}, " "))
+}
+
+func formatStreetDelivery(delivery StreetDelivery) string {
 	var parts []string
 
-	if a.Unit != "" {
-		parts = append(parts, a.Unit)
+	if delivery.Unit != "" {
+		parts = append(parts, delivery.Unit)
 	}
 
-	if a.Level != "" {
-		parts = append(parts, a.Level)
+	if delivery.Level != "" {
+		parts = append(parts, delivery.Level)
 	}
 
-	if a.StreetNumber != "" {
-		parts = append(parts, a.StreetNumber)
+	if delivery.StreetNumber != "" {
+		parts = append(parts, delivery.StreetNumber)
 	}
 
-	if a.StreetName != "" {
-		parts = append(parts, a.StreetName)
+	if delivery.StreetName != "" {
+		parts = append(parts, delivery.StreetName)
 	}
 
-	if a.StreetType != "" {
-		parts = append(parts, a.StreetType)
+	if delivery.StreetType != "" {
+		parts = append(parts, delivery.StreetType)
 	}
 
-	if a.StreetSuffix != "" {
-		parts = append(parts, a.StreetSuffix)
+	if delivery.StreetSuffix != "" {
+		parts = append(parts, delivery.StreetSuffix)
 	}
 
 	return strings.Join(parts, " ")
@@ -366,9 +327,9 @@ func (a *ParsedAddress) FormatLocalityLine() string {
 }
 
 func (a *ParsedAddress) IsValid() bool {
-	return len(a.Errors) == 0 && a.Postcode != "" && a.State != ""
+	return len(a.Errors) == 0 && a.Locality != "" && a.HasDeliveryPoint()
 }
 
 func (a *ParsedAddress) HasDeliveryPoint() bool {
-	return a.IsPoBox || a.StreetNumber != "" || a.StreetName != ""
+	return len(a.DeliveryPoints) > 0 || a.IsPoBox || a.StreetNumber != "" || a.StreetName != ""
 }
