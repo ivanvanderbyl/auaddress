@@ -92,35 +92,47 @@ func Parse(raw string) (*ParsedAddress, error) {
 	return NewParser().Parse(raw)
 }
 
-func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
-	addr := &ParsedAddress{
-		Errors: make([]error, 0),
-	}
+func ParseAll(raw string) ([]*ParsedAddress, error) {
+	return NewParser().ParseAll(raw)
+}
 
+func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
+	addresses, err := p.ParseAll(raw)
+	if len(addresses) > 0 {
+		return addresses[0], err
+	}
+	return &ParsedAddress{Errors: make([]error, 0)}, err
+}
+
+func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error) {
 	normalised := normalise(raw)
 	if normalised == "" {
-		return addr, ErrEmptyAddress
+		return nil, ErrEmptyAddress
 	}
 
 	lines := splitLines(normalised)
 	if len(lines) == 0 {
-		return addr, ErrEmptyAddress
+		return nil, ErrEmptyAddress
 	}
-
-	addr.RawLines = lines
 
 	tokens, err := lexAddress(normalised)
 	if err == nil {
-		err = parseAddressTokens(addr, tokens, normalised)
-	}
-	if err != nil {
-		if p.strict {
-			return addr, err
+		var addresses []*ParsedAddress
+		addresses, err = parseAddressSequence(tokens, normalised)
+		if err == nil || p.strict {
+			return addresses, err
 		}
-		addr.Errors = append(addr.Errors, err)
+		if len(addresses) == 0 {
+			addr := &ParsedAddress{RawLines: lines, Errors: []error{err}}
+			return []*ParsedAddress{addr}, nil
+		}
+		addresses[len(addresses)-1].Errors = append(addresses[len(addresses)-1].Errors, err)
+		return addresses, nil
 	}
-
-	return addr, nil
+	if p.strict {
+		return nil, err
+	}
+	return []*ParsedAddress{{RawLines: lines, Errors: []error{err}}}, nil
 }
 
 func normalise(raw string) string {

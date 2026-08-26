@@ -752,6 +752,80 @@ func TestTokenGrammarStrictErrors(t *testing.T) {
 	}
 }
 
+func TestParseAllIndependentAddresses(t *testing.T) {
+	input := `ACME PTY LTD
+Level 8, 20 Bond Street, Sydney, NSW 2000
+GPO Box 1234, Sydney, NSW 2001`
+
+	addresses, err := ParseAll(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 2 {
+		t.Fatalf("expected 2 addresses, got %d: %#v", len(addresses), addresses)
+	}
+
+	assertStringSliceEqual(t, "first NameLines", []string{"ACME PTY LTD"}, addresses[0].NameLines)
+	assertEqual(t, "first Level", "L 8", addresses[0].Level)
+	assertEqual(t, "first StreetNumber", "20", addresses[0].StreetNumber)
+	assertEqual(t, "first StreetName", "BOND", addresses[0].StreetName)
+	assertEqual(t, "first Locality", "SYDNEY", addresses[0].Locality)
+	assertEqual(t, "first Postcode", "2000", addresses[0].Postcode)
+
+	assertStringSliceEqual(t, "second NameLines", []string{"ACME PTY LTD"}, addresses[1].NameLines)
+	assertEqual(t, "second PoBoxType", "GPO BOX", addresses[1].PoBoxType)
+	assertEqual(t, "second PoBoxNumber", "1234", addresses[1].PoBoxNumber)
+	assertEqual(t, "second Locality", "SYDNEY", addresses[1].Locality)
+	assertEqual(t, "second Postcode", "2001", addresses[1].Postcode)
+}
+
+func TestParseAllIgnoresPhysicalLineLayout(t *testing.T) {
+	input := "20 Bond\nStreet Sydney NSW 2000 GPO\nBox 1234 Sydney NSW\n2001"
+
+	addresses, err := ParseAll(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 2 {
+		t.Fatalf("expected 2 addresses, got %d", len(addresses))
+	}
+	assertEqual(t, "first Postcode", "2000", addresses[0].Postcode)
+	assertEqual(t, "second Postcode", "2001", addresses[1].Postcode)
+}
+
+func TestParseAllKeepsSharedLocalityDeliveryPointsTogether(t *testing.T) {
+	addresses, err := ParseAll("123 Main Street, PO Box 42, Richmond VIC 3121")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(addresses) != 1 {
+		t.Fatalf("expected 1 address, got %d", len(addresses))
+	}
+	if len(addresses[0].DeliveryPoints) != 2 {
+		t.Fatalf("expected 2 delivery points, got %d", len(addresses[0].DeliveryPoints))
+	}
+}
+
+func TestParseReturnsFirstAddress(t *testing.T) {
+	addr, err := Parse("20 Bond Street Sydney NSW 2000 GPO Box 1234 Sydney NSW 2001")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertEqual(t, "StreetNumber", "20", addr.StreetNumber)
+	assertEqual(t, "Postcode", "2000", addr.Postcode)
+}
+
+func TestParseAllStrictRejectsUnexplainedText(t *testing.T) {
+	parser := NewParser(WithStrict(true))
+	addresses, err := parser.ParseAll("20 Bond Street Sydney NSW 2000 UNEXPLAINED GPO Box 1234 Sydney NSW 2001")
+	if err != ErrInvalidAddress {
+		t.Fatalf("expected ErrInvalidAddress, got %v", err)
+	}
+	if len(addresses) != 1 {
+		t.Fatalf("expected successfully parsed prefix address, got %d", len(addresses))
+	}
+}
+
 func assertEqual(t *testing.T, field, expected, got string) {
 	t.Helper()
 	if expected != got {
