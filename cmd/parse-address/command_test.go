@@ -179,3 +179,74 @@ func TestRunCompareJSON(t *testing.T) {
 		t.Errorf("stderr: want empty, got %q", stderr.String())
 	}
 }
+
+func TestRunErrors(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(
+		context.Background(),
+		[]string{"parse-address", "54 Imaginary Street"},
+		&stdout,
+		&stderr,
+	)
+
+	if code != 1 {
+		t.Fatalf("exit code: want 1, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout: want empty, got %q", stdout.String())
+	}
+	if stderr.String() != "invalid address format\n" {
+		t.Errorf("stderr: want %q, got %q", "invalid address format\n", stderr.String())
+	}
+}
+
+func TestRunJSONErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "invalid address",
+			args: []string{"parse-address", "54 Imaginary Street", "--json"},
+			want: `{"error":"invalid address format"}` + "\n",
+		},
+		{
+			name: "invalid left address",
+			args: []string{
+				"parse-address", "compare", "54 Imaginary Street",
+				"54 Wellington Street, Collingwood", "--json",
+			},
+			want: `{"error":"left address: invalid address format"}` + "\n",
+		},
+		{
+			name: "invalid right address",
+			args: []string{
+				"parse-address", "compare", "54 Wellington Street, Collingwood",
+				"54 Imaginary Street", "--json",
+			},
+			want: `{"error":"right address: invalid address format"}` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(context.Background(), tt.args, &stdout, &stderr)
+
+			if code != 1 {
+				t.Fatalf("exit code: want 1, got %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout: want empty, got %q", stdout.String())
+			}
+			if stderr.String() != tt.want {
+				t.Errorf("stderr:\nwant: %q\ngot:  %q", tt.want, stderr.String())
+			}
+		})
+	}
+}

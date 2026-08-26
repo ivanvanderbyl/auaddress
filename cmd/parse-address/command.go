@@ -40,30 +40,42 @@ type comparisonOutput struct {
 	RightKey         string   `json:"rightKey"`
 }
 
+type errorOutput struct {
+	Error string `json:"error"`
+}
+
+type outputOptions struct {
+	json bool
+}
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	command := newCommand(stdout)
+	options := &outputOptions{}
+	command := newCommand(stdout, stderr, options)
 	if err := command.Run(ctx, args); err != nil {
-		fmt.Fprintln(stderr, err)
+		writeError(stderr, options.json, err)
 		return 1
 	}
 	return 0
 }
 
-func newCommand(stdout io.Writer) *cli.Command {
+func newCommand(stdout, stderr io.Writer, options *outputOptions) *cli.Command {
 	return &cli.Command{
 		Name:      "parse-address",
 		Usage:     "parse and compare Australian addresses",
 		ArgsUsage: "ADDRESS",
-		Flags:     []cli.Flag{jsonFlag()},
-		Commands:  []*cli.Command{newCompareCommand(stdout)},
+		Writer:    stdout,
+		ErrWriter: stderr,
+		Flags:     []cli.Flag{jsonFlag(options)},
+		Commands:  []*cli.Command{newCompareCommand(stdout, options)},
 		Action:    parseAction(stdout),
 	}
 }
 
-func jsonFlag() cli.Flag {
+func jsonFlag(options *outputOptions) cli.Flag {
 	return &cli.BoolFlag{
-		Name:  "json",
-		Usage: "write JSON output",
+		Name:        "json",
+		Usage:       "write JSON output",
+		Destination: &options.json,
 	}
 }
 
@@ -85,12 +97,12 @@ func parseAction(stdout io.Writer) cli.ActionFunc {
 	}
 }
 
-func newCompareCommand(stdout io.Writer) *cli.Command {
+func newCompareCommand(stdout io.Writer, options *outputOptions) *cli.Command {
 	return &cli.Command{
 		Name:      "compare",
 		Usage:     "compare two Australian addresses",
 		ArgsUsage: "ADDRESS_A ADDRESS_B",
-		Flags:     []cli.Flag{jsonFlag()},
+		Flags:     []cli.Flag{jsonFlag(options)},
 		Action: func(_ context.Context, command *cli.Command) error {
 			if command.NArg() != 2 {
 				return fmt.Errorf("expected two addresses")
@@ -112,6 +124,14 @@ func newCompareCommand(stdout io.Writer) *cli.Command {
 			return writeComparison(stdout, match)
 		},
 	}
+}
+
+func writeError(writer io.Writer, jsonOutput bool, err error) {
+	if jsonOutput {
+		_ = json.NewEncoder(writer).Encode(errorOutput{Error: err.Error()})
+		return
+	}
+	_, _ = fmt.Fprintln(writer, err)
 }
 
 func parseStrict(raw string) (*auaddress.ParsedAddress, error) {
