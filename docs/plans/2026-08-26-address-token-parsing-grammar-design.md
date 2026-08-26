@@ -10,7 +10,7 @@ left-to-right address token parsing grammar. The parser must:
 - treat state and postcode as optional trailing components;
 - parse components across arbitrary spaces, commas, and line breaks;
 - preserve street and postal delivery points when both appear; and
-- parse multiple independently locality-terminated addresses from one ADR tag;
+- parse multiple independently locality-terminated addresses from one input;
 - compare parsed addresses as exact, partial, or conflicting normalized keys;
 - retain the existing public `ParsedAddress` fields and methods for current
   callers.
@@ -96,9 +96,9 @@ a state is valid. If a state is present, the corresponding bit must be set. A
 postcode remains syntactically validated as four digits; postcode-to-locality
 validation is outside this change.
 
-The input is an ADR-tagged span rather than arbitrary email text. Every
-non-boundary token must belong to the shared prefix or one parsed address;
-unexplained text is invalid.
+The parser consumes address text rather than searching arbitrary email text.
+Every non-boundary token must belong to the shared prefix or one parsed
+address; unexplained text is invalid.
 
 ## Locality index
 
@@ -233,7 +233,7 @@ Omitted state and postcode do not create errors. A missing or unknown locality
 does create an invalid-address error because locality is the minimum required
 terminator.
 
-`ParseAll` must consume the entire ADR span. In strict mode it returns the
+`ParseAll` must consume the entire input. In strict mode it returns the
 successfully parsed prefix plus the first segmentation or validation error. In
 lenient mode it records the error on the affected result where possible. It
 never silently treats unexplained trailing content as another address.
@@ -258,7 +258,7 @@ Table-driven tests cover:
 - two independently terminated addresses on one line or arbitrary lines;
 - one shared prefix copied to every parsed address;
 - multiple delivery points sharing one locality remain one result;
-- complete ADR-span consumption and rejection of unexplained text;
+- complete input consumption and rejection of unexplained text;
 - longest multi-word locality matches;
 - duplicate locality names with absent, matching, and conflicting states;
 - street/locality vocabulary collisions;

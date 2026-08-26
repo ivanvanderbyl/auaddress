@@ -73,7 +73,7 @@ type ParsedAddress struct {
 	Errors    []error
 }
 
-// Parser parses address-tagged Australian address strings.
+// Parser parses Australian address strings.
 type Parser struct {
 	strict bool
 }

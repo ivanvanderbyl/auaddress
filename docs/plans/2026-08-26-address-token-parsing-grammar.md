@@ -357,7 +357,7 @@ Expected: PASS.
 
 ```bash
 git add address.go parser.go address_test.go
-git commit -m "Parse multiple addresses from ADR spans"
+git commit -m "Parse multiple addresses from one input"
 ```
 
 ### Task 8: Add hierarchical normalized comparison
