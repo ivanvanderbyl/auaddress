@@ -2,32 +2,51 @@ package auaddress
 
 import "strings"
 
+// MatchKind classifies the relationship between two parsed addresses.
 type MatchKind uint8
 
 const (
+	// NoMatch means at least one populated identity component conflicts or an input is invalid.
 	NoMatch MatchKind = iota
+	// PartialMatch means populated components agree but one side omits specificity.
 	PartialMatch
+	// ExactMatch means both addresses have identical canonical components.
 	ExactMatch
 )
 
+// MatchComponent identifies one ordered address component in a comparison result.
 type MatchComponent uint8
 
 const (
+	// MatchNone means no populated component matched.
 	MatchNone MatchComponent = iota
+	// MatchDeliveryPoint identifies the presence of a compatible delivery-point kind.
 	MatchDeliveryPoint
+	// MatchUnit identifies a street unit.
 	MatchUnit
+	// MatchLevel identifies a building level.
 	MatchLevel
+	// MatchStreetNumber identifies a street number.
 	MatchStreetNumber
+	// MatchStreetName identifies a street name.
 	MatchStreetName
+	// MatchStreetType identifies a street type.
 	MatchStreetType
+	// MatchStreetSuffix identifies a directional street suffix.
 	MatchStreetSuffix
+	// MatchPostalType identifies a postal delivery type.
 	MatchPostalType
+	// MatchPostalNumber identifies a postal delivery identifier.
 	MatchPostalNumber
+	// MatchLocality identifies a locality.
 	MatchLocality
+	// MatchState identifies a state or territory.
 	MatchState
+	// MatchPostcode identifies a postcode.
 	MatchPostcode
 )
 
+// AddressMatch explains an exact, partial, or conflicting address comparison.
 type AddressMatch struct {
 	Kind             MatchKind
 	MatchedThrough   MatchComponent
@@ -37,6 +56,7 @@ type AddressMatch struct {
 	RightKey         string
 }
 
+// ComparisonKey returns a deterministic key containing canonical and missing components.
 func (a *ParsedAddress) ComparisonKey() string {
 	if a == nil {
 		return ""
@@ -70,6 +90,7 @@ func (a *ParsedAddress) ComparisonKey() string {
 	return key.String()
 }
 
+// CompareAddresses compares canonical populated components without fuzzy matching.
 func CompareAddresses(left, right *ParsedAddress) AddressMatch {
 	match := AddressMatch{}
 	if left != nil {
@@ -79,6 +100,9 @@ func CompareAddresses(left, right *ParsedAddress) AddressMatch {
 		match.RightKey = right.ComparisonKey()
 	}
 	if left == nil || right == nil {
+		return match
+	}
+	if !left.IsValid() || !right.IsValid() {
 		return match
 	}
 

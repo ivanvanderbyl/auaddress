@@ -826,6 +826,53 @@ func TestParseAllStrictRejectsUnexplainedText(t *testing.T) {
 	}
 }
 
+func TestParseAllOptionalTailsBeforeAnotherAddress(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		firstState     string
+		firstPostcode  string
+		secondState    string
+		secondPostcode string
+	}{
+		{
+			name:        "states without postcodes",
+			input:       "123 Main Street Sydney NSW 45 Queen Street Melbourne VIC",
+			firstState:  "NSW",
+			secondState: "VIC",
+		},
+		{
+			name:  "localities without states or postcodes",
+			input: "123 Main Street Sydney 45 Queen Street Melbourne",
+		},
+		{
+			name:           "first state only and complete second tail",
+			input:          "123 Main Street Sydney NSW 45 Queen Street Melbourne VIC 3000",
+			firstState:     "NSW",
+			secondState:    "VIC",
+			secondPostcode: "3000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addresses, err := ParseAll(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(addresses) != 2 {
+				t.Fatalf("expected 2 addresses, got %d: %#v", len(addresses), addresses)
+			}
+			assertEqual(t, "first Locality", "SYDNEY", addresses[0].Locality)
+			assertEqual(t, "first State", tt.firstState, addresses[0].State)
+			assertEqual(t, "first Postcode", tt.firstPostcode, addresses[0].Postcode)
+			assertEqual(t, "second Locality", "MELBOURNE", addresses[1].Locality)
+			assertEqual(t, "second State", tt.secondState, addresses[1].State)
+			assertEqual(t, "second Postcode", tt.secondPostcode, addresses[1].Postcode)
+		})
+	}
+}
+
 func assertEqual(t *testing.T, field, expected, got string) {
 	t.Helper()
 	if expected != got {

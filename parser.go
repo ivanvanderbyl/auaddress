@@ -17,45 +17,72 @@ type addressSegment struct {
 
 func parseAddressSequence(tokens []token, normalized string) ([]*ParsedAddress, error) {
 	position := skipSoftTokens(tokens, 0)
-	addresses := make([]*ParsedAddress, 0, 2)
+	first, ok := findFirstAddressSegment(tokens, position)
+	if !ok {
+		addr := &ParsedAddress{
+			RawLines: splitLines(normalized),
+			Errors:   make([]error, 0),
+		}
+		return []*ParsedAddress{addr}, classifyUnparsedAddress(tokens)
+	}
+
 	sharedNames := []string(nil)
+	if first.deliveryStart < len(tokens) && tokens[first.deliveryStart].offset > 0 {
+		sharedNames = splitLines(normalized[:tokens[first.deliveryStart].offset])
+	}
 
-	for !isEOF(tokens, position) {
-		segment, ok := findAddressSegment(tokens, position, len(addresses) == 0)
-		if !ok {
-			if len(addresses) > 0 {
-				return addresses, ErrInvalidAddress
-			}
-
-			addr := &ParsedAddress{RawLines: splitLines(normalized), Errors: make([]error, 0)}
-			err := parseAddressTokens(addr, tokens, normalized)
-			return []*ParsedAddress{addr}, err
-		}
-
-		if len(addresses) == 0 && segment.deliveryStart < len(tokens) && tokens[segment.deliveryStart].offset > 0 {
-			sharedNames = splitLines(normalized[:tokens[segment.deliveryStart].offset])
-		}
-
+	addresses := make([]*ParsedAddress, 0, 2)
+	segment := first
+	for {
 		addr := addressFromSegment(segment, tokens, normalized, sharedNames)
 		addresses = append(addresses, addr)
 		if segment.tail.err != nil {
+			addr.Errors = append(addr.Errors, segment.tail.err)
 			return addresses, segment.tail.err
 		}
-		position = skipSoftTokens(tokens, segment.end)
-	}
 
-	return addresses, nil
+		position = skipSoftTokens(tokens, segment.end)
+		if isEOF(tokens, position) {
+			return addresses, nil
+		}
+
+		var segmentOK bool
+		segment, segmentOK = parseAddressSegmentAt(tokens, position)
+		if !segmentOK {
+			return addresses, ErrInvalidAddress
+		}
+	}
 }
 
-func findAddressSegment(tokens []token, start int, allowPrefix bool) (addressSegment, bool) {
-	bestValid := addressSegment{}
+func findFirstAddressSegment(tokens []token, start int) (addressSegment, bool) {
+	for position := start; position < len(tokens); position++ {
+		position = skipSoftTokens(tokens, position)
+		if isEOF(tokens, position) {
+			break
+		}
+		if !canStartDelivery(tokens, position) {
+			continue
+		}
+		if segment, ok := parseAddressSegmentAt(tokens, position); ok {
+			return segment, true
+		}
+	}
+	return addressSegment{}, false
+}
+
+func parseAddressSegmentAt(tokens []token, deliveryStart int) (addressSegment, bool) {
+	deliveryStart = skipSoftTokens(tokens, deliveryStart)
+	var bestValid addressSegment
 	validFound := false
-	bestInvalid := addressSegment{}
+	var firstInvalid addressSegment
 	invalidFound := false
 
-	for position := start; position < len(tokens); position++ {
+	for position := deliveryStart + 1; position < len(tokens); position++ {
 		localityStart := skipSoftTokens(tokens, position)
 		if isEOF(tokens, localityStart) {
+			break
+		}
+		if validFound && localityStart >= bestValid.end {
 			break
 		}
 
@@ -65,13 +92,13 @@ func findAddressSegment(tokens []token, start int, allowPrefix bool) (addressSeg
 			continue
 		}
 
-		tail, end := parseSequenceTail(tokens, localityStart, locality)
-		deliveryStart, points, deliveryOK := findDeliverySequenceFrom(tokens, start, localityStart, allowPrefix)
-		if !deliveryOK {
+		points, next, deliveryOK := recognizeDeliverySequence(tokens, deliveryStart, localityStart)
+		if !deliveryOK || skipSoftTokensBefore(tokens, next, localityStart) != localityStart {
 			position = localityStart
 			continue
 		}
 
+		tail, end := parseSequenceTail(tokens, localityStart, locality)
 		segment := addressSegment{
 			deliveryStart: deliveryStart,
 			points:        points,
@@ -79,21 +106,21 @@ func findAddressSegment(tokens []token, start int, allowPrefix bool) (addressSeg
 			end:           end,
 		}
 		if tail.err != nil {
-			if !invalidFound || preferSegment(segment, bestInvalid, tokens) {
-				bestInvalid = segment
+			if !invalidFound {
+				firstInvalid = segment
 				invalidFound = true
+			}
+			if !isEOF(tokens, end) && canStartDelivery(tokens, end) {
+				return segment, true
 			}
 			position = localityStart
 			continue
 		}
-
-		if !sequenceTailCanEnd(tokens, segment) {
-			position = localityStart
-			continue
-		}
-		if !validFound || preferSegment(segment, bestValid, tokens) {
-			bestValid = segment
-			validFound = true
+		if sequenceTailCanEnd(tokens, segment) {
+			if !validFound || preferLocalitySegment(segment, bestValid, tokens) {
+				bestValid = segment
+				validFound = true
+			}
 		}
 		position = localityStart
 	}
@@ -101,29 +128,23 @@ func findAddressSegment(tokens []token, start int, allowPrefix bool) (addressSeg
 	if validFound {
 		return bestValid, true
 	}
-	return bestInvalid, invalidFound
+	return firstInvalid, invalidFound
 }
 
-func findDeliverySequenceFrom(tokens []token, start, limit int, allowPrefix bool) (int, []DeliveryPoint, bool) {
-	if !allowPrefix {
-		position := skipSoftTokensBefore(tokens, start, limit)
-		points, next, ok := recognizeDeliverySequence(tokens, position, limit)
-		if ok && skipSoftTokensBefore(tokens, next, limit) == limit {
-			return position, points, true
-		}
-		return 0, nil, false
+func preferLocalitySegment(candidate, current addressSegment, tokens []token) bool {
+	if candidate.end != current.end {
+		return candidate.end < current.end
 	}
+	candidateBoundary := hasExplicitBoundaryBefore(tokens, candidate.tail.start)
+	currentBoundary := hasExplicitBoundaryBefore(tokens, current.tail.start)
+	if candidateBoundary != currentBoundary {
+		return candidateBoundary
+	}
+	return candidate.tail.start < current.tail.start
+}
 
-	for position := start; position < limit; position++ {
-		if isSoftToken(tokens[position]) {
-			continue
-		}
-		points, next, ok := recognizeDeliverySequence(tokens, position, limit)
-		if ok && skipSoftTokensBefore(tokens, next, limit) == limit {
-			return position, points, true
-		}
-	}
-	return 0, nil, false
+func hasExplicitBoundaryBefore(tokens []token, position int) bool {
+	return position > 0 && isSoftToken(tokens[position-1])
 }
 
 func parseSequenceTail(tokens []token, start int, locality localityMatch) (addressTail, int) {
@@ -152,11 +173,14 @@ func parseSequenceTail(tokens []token, start int, locality localityMatch) (addre
 	current = tokens[position]
 	if isPostcode(current.value) {
 		tail.postcode = current.value
-		position = skipSoftTokens(tokens, position+1)
-	} else if tail.state != "" {
+		return tail, skipSoftTokens(tokens, position+1)
+	}
+	if canStartDelivery(tokens, position) {
+		return tail, position
+	}
+	if tail.state != "" {
 		tail.err = ErrNoPostcode
 	}
-
 	return tail, position
 }
 
@@ -182,16 +206,17 @@ func canStartDelivery(tokens []token, position int) bool {
 	return tokens[position].kind == tokenNumberish
 }
 
-func preferSegment(candidate, current addressSegment, tokens []token) bool {
-	if candidate.end != current.end {
-		return candidate.end < current.end
+func classifyUnparsedAddress(tokens []token) error {
+	for position := 0; position < len(tokens); position++ {
+		position = skipSoftTokens(tokens, position)
+		if isEOF(tokens, position) {
+			break
+		}
+		if _, ok := matchLocality(tokens, position); ok {
+			return ErrNoDeliveryLine
+		}
 	}
-	candidateBoundary := hasExplicitBoundaryBefore(tokens, candidate.tail.start)
-	currentBoundary := hasExplicitBoundaryBefore(tokens, current.tail.start)
-	if candidateBoundary != currentBoundary {
-		return candidateBoundary
-	}
-	return candidate.tail.start < current.tail.start
+	return ErrInvalidAddress
 }
 
 func addressFromSegment(segment addressSegment, tokens []token, normalized string, sharedNames []string) *ParsedAddress {
@@ -212,132 +237,6 @@ func addressFromSegment(segment addressSegment, tokens []token, normalized strin
 	}
 	addr.RawLines = append(append([]string(nil), sharedNames...), splitLines(normalized[startOffset:endOffset])...)
 	return addr
-}
-
-func parseAddressTokens(addr *ParsedAddress, tokens []token, normalized string) error {
-	tail, ok := findAddressTail(tokens)
-	if !ok {
-		return ErrInvalidAddress
-	}
-
-	addr.Locality = tail.locality.name
-	addr.State = tail.state
-	addr.Postcode = tail.postcode
-
-	deliveryStart, points, ok := findDeliverySequence(tokens, tail.start)
-	if !ok {
-		return ErrNoDeliveryLine
-	}
-	addr.DeliveryPoints = points
-	projectLegacyDeliveryFields(addr)
-
-	if deliveryStart < len(tokens) && tokens[deliveryStart].offset > 0 {
-		addr.NameLines = splitLines(normalized[:tokens[deliveryStart].offset])
-	}
-
-	return tail.err
-}
-
-func findAddressTail(tokens []token) (addressTail, bool) {
-	bestInvalid := addressTail{start: -1}
-	invalidFound := false
-	bestValid := addressTail{start: -1}
-	validFound := false
-	bestBoundary := false
-
-	for position := 0; position < len(tokens); position++ {
-		start := skipSoftTokens(tokens, position)
-		if start >= len(tokens) || tokens[start].kind == tokenEOF {
-			break
-		}
-
-		locality, ok := matchLocality(tokens, start)
-		if !ok {
-			position = start
-			continue
-		}
-
-		candidate := parseAddressTail(tokens, start, locality)
-		if candidate.err == nil {
-			boundary := hasExplicitBoundaryBefore(tokens, start)
-			if !validFound || boundary && !bestBoundary {
-				bestValid = candidate
-				bestBoundary = boundary
-				validFound = true
-			}
-			position = start
-			continue
-		}
-		if !invalidFound || candidate.start > bestInvalid.start {
-			bestInvalid = candidate
-			invalidFound = true
-		}
-		position = start
-	}
-
-	if validFound {
-		return bestValid, true
-	}
-	return bestInvalid, invalidFound
-}
-
-func hasExplicitBoundaryBefore(tokens []token, position int) bool {
-	return position > 0 && isSoftToken(tokens[position-1])
-}
-
-func parseAddressTail(tokens []token, start int, locality localityMatch) addressTail {
-	tail := addressTail{start: start, locality: locality}
-	position := skipSoftTokens(tokens, locality.next)
-	if isEOF(tokens, position) {
-		return tail
-	}
-
-	current := tokens[position]
-	if _, isState := validStates[current.value]; isState {
-		tail.state = current.value
-		if !locality.states.contains(current.value) {
-			tail.err = ErrNoState
-		}
-		position = skipSoftTokens(tokens, position+1)
-	} else if current.kind == tokenWord && hasPostcodeAfter(tokens, position+1) {
-		tail.err = ErrNoState
-		position = skipSoftTokens(tokens, position+1)
-	}
-
-	if isEOF(tokens, position) {
-		return tail
-	}
-
-	current = tokens[position]
-	if isPostcode(current.value) {
-		tail.postcode = current.value
-		position = skipSoftTokens(tokens, position+1)
-	} else {
-		if tail.state != "" {
-			tail.err = ErrNoPostcode
-		} else if tail.err == nil {
-			tail.err = ErrInvalidAddress
-		}
-		return tail
-	}
-
-	if !isEOF(tokens, position) {
-		tail.err = ErrInvalidAddress
-	}
-	return tail
-}
-
-func findDeliverySequence(tokens []token, limit int) (int, []DeliveryPoint, bool) {
-	for start := 0; start < limit; start++ {
-		if isSoftToken(tokens[start]) {
-			continue
-		}
-		points, next, ok := recognizeDeliverySequence(tokens, start, limit)
-		if ok && skipSoftTokensBefore(tokens, next, limit) == limit {
-			return start, points, true
-		}
-	}
-	return 0, nil, false
 }
 
 func projectLegacyDeliveryFields(addr *ParsedAddress) {

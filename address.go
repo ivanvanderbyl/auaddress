@@ -13,13 +13,17 @@ var (
 	ErrEmptyAddress   = errors.New("empty address")
 )
 
+// DeliveryPointKind identifies a street or postal delivery point.
 type DeliveryPointKind uint8
 
 const (
+	// DeliveryPointStreet identifies a physical street delivery point.
 	DeliveryPointStreet DeliveryPointKind = iota + 1
+	// DeliveryPointPostal identifies a PO box, bag, or related postal delivery point.
 	DeliveryPointPostal
 )
 
+// StreetDelivery contains the canonical components of a street delivery point.
 type StreetDelivery struct {
 	Unit         string
 	Level        string
@@ -29,17 +33,20 @@ type StreetDelivery struct {
 	StreetSuffix string
 }
 
+// PostalDelivery contains the canonical type and identifier of a postal delivery point.
 type PostalDelivery struct {
 	Type   string
 	Number string
 }
 
+// DeliveryPoint preserves one parsed delivery point and its kind.
 type DeliveryPoint struct {
 	Kind   DeliveryPointKind
 	Street StreetDelivery
 	Postal PostalDelivery
 }
 
+// ParsedAddress contains canonical delivery points, locality details, and compatibility fields.
 type ParsedAddress struct {
 	RawLines []string
 
@@ -66,18 +73,22 @@ type ParsedAddress struct {
 	Errors    []error
 }
 
+// Parser parses address-tagged Australian address strings.
 type Parser struct {
 	strict bool
 }
 
+// Option configures a Parser.
 type Option func(*Parser)
 
+// WithStrict makes parsing return the first grammar or validation error directly.
 func WithStrict(strict bool) Option {
 	return func(p *Parser) {
 		p.strict = strict
 	}
 }
 
+// NewParser constructs a parser with the supplied options.
 func NewParser(opts ...Option) *Parser {
 	p := &Parser{
 		strict: false,
@@ -88,14 +99,17 @@ func NewParser(opts ...Option) *Parser {
 	return p
 }
 
+// Parse returns the first parsed address in raw.
 func Parse(raw string) (*ParsedAddress, error) {
 	return NewParser().Parse(raw)
 }
 
+// ParseAll returns every independently locality-terminated address in raw.
 func ParseAll(raw string) ([]*ParsedAddress, error) {
 	return NewParser().ParseAll(raw)
 }
 
+// Parse returns the first parsed address in raw using the parser's options.
 func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
 	addresses, err := p.ParseAll(raw)
 	if len(addresses) > 0 {
@@ -104,6 +118,7 @@ func (p *Parser) Parse(raw string) (*ParsedAddress, error) {
 	return &ParsedAddress{Errors: make([]error, 0)}, err
 }
 
+// ParseAll returns every independently locality-terminated address using the parser's options.
 func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error) {
 	normalised := normalise(raw)
 	if normalised == "" {
@@ -126,7 +141,10 @@ func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error) {
 			addr := &ParsedAddress{RawLines: lines, Errors: []error{err}}
 			return []*ParsedAddress{addr}, nil
 		}
-		addresses[len(addresses)-1].Errors = append(addresses[len(addresses)-1].Errors, err)
+		last := addresses[len(addresses)-1]
+		if len(last.Errors) == 0 || !errors.Is(last.Errors[len(last.Errors)-1], err) {
+			last.Errors = append(last.Errors, err)
+		}
 		return addresses, nil
 	}
 	if p.strict {
@@ -211,6 +229,7 @@ func (a *ParsedAddress) FormatDeliveryLine() string {
 	return deliveryLines[0]
 }
 
+// FormatDeliveryLines formats every delivery point in encounter order.
 func (a *ParsedAddress) FormatDeliveryLines() []string {
 	if len(a.DeliveryPoints) == 0 {
 		if line := a.formatLegacyDeliveryLine(); line != "" {

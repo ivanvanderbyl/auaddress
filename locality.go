@@ -2,7 +2,7 @@ package auaddress
 
 import "strings"
 
-//go:generate go run ./cmd/locality-gen -output localities_generated.go
+//go:generate go run ./cmd/locality-gen -source recorded -output localities_generated.go
 
 type stateMask uint8
 

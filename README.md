@@ -204,12 +204,15 @@ provide Address Matching Approval System certification.
 ```bash
 task test
 task gnaf:update
+task gnaf:verify
 task release VERSION=v1.2.3
 task release:push VERSION=v1.2.3
 ```
 
-`task test` checks Go formatting, runs `go vet`, and runs all tests. `release`
-requires a clean worktree and creates an annotated local semantic-version tag.
+`task test` checks Go formatting, runs `go vet`, and runs all tests.
+`gnaf:verify` regenerates the locality index from the source URL recorded in the
+generated file and compares it byte for byte. `release` runs that check,
+requires a clean worktree, and creates an annotated local semantic-version tag.
 It never pushes. `release:push` is the separate explicit push step.
 
 ## References

@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -34,10 +35,26 @@ var stateBits = map[string]uint8{
 func main() {
 	output := flag.String("output", "localities_generated.go", "generated Go file")
 	source := flag.String("source", defaultSource, "G-NAF PSV zip path or HTTP URL")
+	check := flag.String("check", "", "verify that a generated Go file matches its recorded source")
 	flag.Parse()
 
 	resolvedSource := *source
-	if resolvedSource == "latest" {
+	if resolvedSource == "recorded" {
+		recordedPath := *check
+		if recordedPath == "" {
+			recordedPath = *output
+		}
+		recorded, err := os.ReadFile(recordedPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read recorded G-NAF source from %s: %v\n", recordedPath, err)
+			os.Exit(1)
+		}
+		resolvedSource, err = sourceFromGenerated(recorded)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	} else if resolvedSource == "latest" {
 		var err error
 		resolvedSource, err = resolveLatestGNAF(&http.Client{Timeout: 60 * time.Second}, gnafPackageEndpoint)
 		if err != nil {
@@ -65,10 +82,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if *check != "" {
+		existing, err := os.ReadFile(*check)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read generated locality index %s: %v\n", *check, err)
+			os.Exit(1)
+		}
+		if !bytes.Equal(generated, existing) {
+			fmt.Fprintf(os.Stderr, "%s is not reproducible from %s\n", *check, resolvedSource)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := os.WriteFile(*output, generated, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", *output, err)
 		os.Exit(1)
 	}
+}
+
+func sourceFromGenerated(generated []byte) (string, error) {
+	const prefix = "// Source: "
+	for _, line := range strings.Split(string(generated), "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		source := strings.TrimPrefix(line, prefix)
+		if end := strings.Index(source, " ("); end >= 0 {
+			source = source[:end]
+		}
+		if source != "" {
+			return source, nil
+		}
+	}
+	return "", fmt.Errorf("generated locality index does not record a source URL")
 }
 
 func resolveLatestGNAF(client *http.Client, endpoint string) (string, error) {

@@ -91,6 +91,40 @@ func TestCompareAddressesConflictingComponents(t *testing.T) {
 	}
 }
 
+func TestCompareAddressesRejectsInvalidInputs(t *testing.T) {
+	lenient, err := Parse("123 Main Street, Sydney VIC 2000")
+	if err != nil {
+		t.Fatalf("lenient parse should record rather than return validation error: %v", err)
+	}
+	if len(lenient.Errors) == 0 {
+		t.Fatal("expected lenient parse to record an incompatible state")
+	}
+	strict, strictErr := NewParser(WithStrict(true)).Parse("123 Main Street, Sydney VIC 2000")
+	if strictErr != ErrNoState {
+		t.Fatalf("expected strict parse state error, got %v", strictErr)
+	}
+
+	tests := []struct {
+		name  string
+		left  *ParsedAddress
+		right *ParsedAddress
+	}{
+		{"empty", &ParsedAddress{}, &ParsedAddress{}},
+		{"locality only", &ParsedAddress{Locality: "SYDNEY"}, &ParsedAddress{Locality: "SYDNEY"}},
+		{"lenient error", lenient, lenient},
+		{"strict error", strict, strict},
+		{"invalid versus valid", &ParsedAddress{Locality: "SYDNEY"}, mustParseAddress(t, "123 Main Street Sydney NSW 2000")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if match := CompareAddresses(tt.left, tt.right); match.Kind != NoMatch {
+				t.Fatalf("expected no match for invalid inputs, got %#v", match)
+			}
+		})
+	}
+}
+
 func mustParseAddress(t *testing.T, raw string) *ParsedAddress {
 	t.Helper()
 	addr, err := Parse(raw)

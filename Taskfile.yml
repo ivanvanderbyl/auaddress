@@ -26,6 +26,11 @@ tasks:
       - gofmt -w localities_generated.go
       - task: test
 
+  gnaf:verify:
+    desc: Verify the embedded locality index against its recorded G-NAF source
+    cmds:
+      - go run ./cmd/locality-gen -source recorded -check localities_generated.go
+
   release:
     desc: Verify and create an annotated local release tag (VERSION=vX.Y.Z)
     requires:
@@ -42,6 +47,7 @@ tasks:
       - sh: '! git rev-parse --verify --quiet "refs/tags/$AUADDRESS_RELEASE_VERSION" >/dev/null'
         msg: The requested tag already exists
     cmds:
+      - task: gnaf:verify
       - task: test
       - git tag -a "$AUADDRESS_RELEASE_VERSION" -m "Release $AUADDRESS_RELEASE_VERSION"
       - echo "Created local tag $AUADDRESS_RELEASE_VERSION. Push it with task release:push VERSION=$AUADDRESS_RELEASE_VERSION"
