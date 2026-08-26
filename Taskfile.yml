@@ -18,7 +18,7 @@ tasks:
         fi
       - go vet ./...
       - go test ./...
-      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/gh/test_determine_highest_version_prefix.py
+      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/gh -p 'test_*.py'
 
   gnaf:update:
     desc: Regenerate the embedded locality index from the latest GDA2020 G-NAF release

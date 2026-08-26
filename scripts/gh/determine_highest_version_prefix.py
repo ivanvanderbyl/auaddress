@@ -16,13 +16,15 @@ FALLBACK_VERSION = (0, 1, 0)
 
 def git_tags() -> Iterable[str]:
     output = subprocess.check_output(["git", "tag"], text=True)
-    return output.split()
+    if not output:
+        return []
+    return output.removesuffix("\n").split("\n")
 
 
 def next_version(tags: Iterable[str]) -> tuple[int, int, int]:
     versions = []
     for tag in tags:
-        match = TAG_PATTERN.match(tag.strip())
+        match = TAG_PATTERN.fullmatch(tag)
         if match:
             versions.append(tuple(map(int, match.groups())))
 

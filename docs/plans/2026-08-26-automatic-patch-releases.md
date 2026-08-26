@@ -4,7 +4,7 @@
 
 **Goal:** Create the next patch tag and GitHub Release whenever a pull request merges into `main`.
 
-**Architecture:** Adapt Alcova's `adk-anthropic-go` merged-pull-request workflow to this single Go module. Keep semantic-version calculation in a small tested Python script, preview the next tag while a pull request is open, and make the merge path concurrency-safe and idempotent before it pushes an annotated tag. Preserve the existing Task-based manual release path.
+**Architecture:** Adapt Alcova's `adk-anthropic-go` release experience to this single Go module, with separate read-only preview and closure-observer workflows plus a privileged `workflow_run` reconciler. Keep semantic-version calculation and ordered first-parent reconciliation in tested Python. The reconciler verifies merged PR data through GitHub, releases all missing PR points in ancestry order, and preserves the existing Task-based manual release path.
 
 **Tech Stack:** GitHub Actions, Bash, Python 3 standard library, Git, GitHub CLI, Task, Go 1.25.5.
 
@@ -50,7 +50,7 @@ Also test that `main()` prints `MAJOR.MINOR.PATCH` and appends
 Run:
 
 ```bash
-python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
 ```
 
 Expected: FAIL because `determine_highest_version_prefix.py` does not exist.
@@ -60,7 +60,7 @@ Expected: FAIL because `determine_highest_version_prefix.py` does not exist.
 Adapt the `adk-anthropic-go` script with these public functions:
 
 ```python
-TAG_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+TAG_PATTERN = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 FALLBACK_VERSION = (0, 1, 0)
 
 def git_tags() -> Iterable[str]: ...
@@ -72,13 +72,15 @@ def main() -> int: ...
 `next_version` parses integers and uses tuple ordering, not string ordering.
 `main` reads the current repository tags, prints the next version without the
 leading `v`, and writes the GitHub Actions output when available.
+Git tag output is split only on newline boundaries, and candidate names are not
+trimmed before exact matching.
 
 **Step 4: Run the calculator tests and verify GREEN**
 
 Run:
 
 ```bash
-python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
 ```
 
 Expected: all calculator and command tests pass.
@@ -88,7 +90,7 @@ Expected: all calculator and command tests pass.
 Add this command to `Taskfile.yml` after Go tests:
 
 ```yaml
-- python3 -m unittest discover -s scripts/gh -p 'test_*.py'
+- PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/gh -p 'test_*.py'
 ```
 
 Run `task test`. Expected: formatting, vet, Go tests, and calculator tests pass.
@@ -101,6 +103,9 @@ git commit -m "Add release version calculator"
 ```
 
 ### Task 2: Add the merged-pull-request release workflow
+
+> Superseded by Task 5. This section records the initial single-workflow
+> implementation; it is not the final security or ordering architecture.
 
 **Files:**
 - Create: `.github/workflows/tag-merged-pr.yml`
@@ -260,6 +265,8 @@ git commit -m "Document automatic patch releases"
 
 ### Task 4: Verify the completed release path
 
+> Superseded by Task 5 for the final two-workflow verification commands.
+
 **Files:**
 - Verify: `.github/workflows/tag-merged-pr.yml`
 - Verify: `scripts/gh/determine_highest_version_prefix.py`
@@ -273,7 +280,7 @@ Run:
 ```bash
 task test
 go test -count=1 ./...
-python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/gh -p 'test_*.py' -v
 actionlint .github/workflows/tag-merged-pr.yml
 git diff --check
 ```
@@ -301,3 +308,37 @@ git log -6 --oneline
 
 Expected: a clean worktree with calculator, workflow, and documentation commits
 after the approved design and implementation-plan commits.
+
+### Task 5: Harden and order release reconciliation
+
+**Files:**
+- Modify: `.github/workflows/tag-merged-pr.yml`
+- Create: `.github/workflows/release-merged-prs.yml`
+- Create: `scripts/gh/reconcile_releases.py`
+- Create: `scripts/gh/test_reconcile_releases.py`
+- Modify: `scripts/gh/determine_highest_version_prefix.py`
+- Modify: `scripts/gh/test_determine_highest_version_prefix.py`
+- Modify: `Taskfile.yml`
+
+Keep separate read-only preview and closure-observer workflows. The preview
+checks out only the trusted base SHA and is not watched by privileged code. The
+observer checks out nothing and emits a deterministic numeric PR run name.
+Trigger the privileged workflow only from that observer through `workflow_run`;
+check out trusted default-branch code there, bind the run name and available
+run metadata to the PR through the GitHub API, and grant write permission only
+to its reconciliation job.
+
+Under release-only `queue: max` concurrency, start from the latest contiguous
+published stable release, falling back to `v0.0.1`, and query only the missing
+first-parent interval through the verified target. Use commit-associated PR data
+to identify merge, squash, and rebase release points and skip direct pushes. A
+single strictly increasing manual tag is an ordered anchor; correct tags with
+missing or draft Releases recover in place. Completed releases no-op, while
+prereleases, missing context, and conflicting or misplaced tags fail safely.
+
+Test exact tag parsing and reconciliation with planner cases, mocked clients,
+and a temporary Git repository,
+then verify both workflows with `actionlint`, allowing only the installed
+version's narrowly matched stale-schema diagnostic for `queue: max`. Run the
+focused Python suite, `task test`, `go test -count=1 ./...`, and
+`git diff --check` before committing.

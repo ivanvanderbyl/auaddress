@@ -295,7 +295,7 @@ GitHub Release with generated notes. While a pull request is open, its workflow
 summary shows the proposed release tag.
 
 `task test` checks Go formatting, runs `go vet`, runs all Go tests, and tests
-the release-version calculator.
+the release-version calculator and ordered release reconciliation.
 
 `gnaf:verify` regenerates the locality index from the source URL recorded in the
 generated file and compares it byte for byte.
@@ -303,7 +303,10 @@ generated file and compares it byte for byte.
 `release` and `release:push` remain available for manual recovery, rather than
 the normal release process. `release` runs the G-NAF check, requires a clean
 worktree, and creates an annotated local semantic-version tag. It never pushes.
-`release:push` is the separate explicit push step.
+It also does not create a GitHub Release. `release:push` is the separate explicit
+push step; rerun release reconciliation afterward to publish the matching
+GitHub Release. A manually selected version must be greater than the preceding
+release, after which automatic releases continue by incrementing its patch.
 
 ## References
 

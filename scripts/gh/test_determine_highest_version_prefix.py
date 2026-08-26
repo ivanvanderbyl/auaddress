@@ -35,6 +35,11 @@ class NextVersionTest(unittest.TestCase):
 
         self.assertEqual(version_prefix.next_version(tags), (1, 2, 3))
 
+    def test_ignores_tag_with_unicode_trailing_whitespace(self) -> None:
+        tags = ["v1.2.3", "v9.9.9\N{NO-BREAK SPACE}"]
+
+        self.assertEqual(version_prefix.next_version(tags), (1, 2, 4))
+
     def test_uses_fallback_when_no_stable_version_exists(self) -> None:
         tags = ["v1.2.3-beta.1", "module/v3.2.1", "not-a-version"]
 
@@ -47,6 +52,15 @@ class NextVersionTest(unittest.TestCase):
 
 
 class GitTagsTest(unittest.TestCase):
+    def test_splits_only_newline_delimited_git_output(self) -> None:
+        output = "v1.2.3\nv9.9.9\N{NO-BREAK SPACE}\n"
+
+        with mock.patch.object(subprocess, "check_output", return_value=output):
+            self.assertEqual(
+                list(version_prefix.git_tags()),
+                ["v1.2.3", "v9.9.9\N{NO-BREAK SPACE}"],
+            )
+
     def test_propagates_git_failure(self) -> None:
         error = subprocess.CalledProcessError(1, ["git", "tag"])
 
