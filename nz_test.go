@@ -84,6 +84,32 @@ func TestParseNewZealandStreetAddress(t *testing.T) {
 	}
 }
 
+func TestNewZealandParserSupportsChathamIslandsTerritory(t *testing.T) {
+	address, err := Parse("1 Main Road, Waitangi, Chatham Islands 8013, New Zealand")
+	if err != nil {
+		t.Fatalf("Parse returned an error: %v", err)
+	}
+	if !address.IsValid() {
+		t.Fatalf("expected a valid address, got errors: %v", address.Errors)
+	}
+	if got, want := address.State, "CHATHAM ISLANDS"; got != want {
+		t.Errorf("region: got %q, want %q", got, want)
+	}
+	if got, want := address.Format(), "1 MAIN RD\nWAITANGI CHATHAM ISLANDS 8013"; got != want {
+		t.Errorf("Format: got %q, want %q", got, want)
+	}
+	if got, want := address.ComparisonKey(), "NZ|STREET{UNIT=;LEVEL=;NUMBER=1;NAME=MAIN;TYPE=RD;SUFFIX=}|LOCALITY=WAITANGI|STATE=CHATHAM ISLANDS|POSTCODE=8013"; got != want {
+		t.Errorf("ComparisonKey: got %q, want %q", got, want)
+	}
+	reparsed, err := Parse(address.Format())
+	if err != nil {
+		t.Fatalf("reparse formatted address: %v", err)
+	}
+	if got, want := reparsed.ComparisonKey(), address.ComparisonKey(); got != want {
+		t.Errorf("comparison key after parse-format-parse: got %q, want %q", got, want)
+	}
+}
+
 func TestNewZealandParserDoesNotStealAustralianFullStateName(t *testing.T) {
 	address, err := Parse("1 Collins Street, Melbourne Victoria 3000")
 	if err != nil {

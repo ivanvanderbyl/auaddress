@@ -148,17 +148,17 @@ func TestRunParseJSON(t *testing.T) {
 		{
 			name: "flag after address",
 			args: []string{"parse-address", "Level 4, 54 Wellington Street, Collingwood", "--json"},
-			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
+			want: `[{"country":"AU","deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
 		},
 		{
 			name: "flag before address",
 			args: []string{"parse-address", "--json", "Level 4, 54 Wellington Street, Collingwood"},
-			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
+			want: `[{"country":"AU","deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"}]` + "\n",
 		},
 		{
 			name: "postal delivery",
 			args: []string{"parse-address", "PO Box 42, Richmond", "--json"},
-			want: `[{"deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"42"}],"locality":"RICHMOND"}]` + "\n",
+			want: `[{"country":"AU","deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"42"}],"locality":"RICHMOND"}]` + "\n",
 		},
 		{
 			name: "multiple addresses",
@@ -167,7 +167,12 @@ func TestRunParseJSON(t *testing.T) {
 				"Level 4, 54 Wellington St, Collingwood\\nPO Box 234, Melbourne",
 				"--json",
 			},
-			want: `[{"deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"},{"deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"234"}],"locality":"MELBOURNE"}]` + "\n",
+			want: `[{"country":"AU","deliveryPoints":[{"kind":"street","level":"L 4","streetNumber":"54","streetName":"WELLINGTON","streetType":"ST"}],"locality":"COLLINGWOOD"},{"country":"AU","deliveryPoints":[{"kind":"postal","postalType":"PO BOX","postalNumber":"234"}],"locality":"MELBOURNE"}]` + "\n",
+		},
+		{
+			name: "New Zealand country",
+			args: []string{"parse-address", "1 Queen Street, Auckland, Auckland 1010", "--json"},
+			want: `[{"country":"NZ","deliveryPoints":[{"kind":"street","streetNumber":"1","streetName":"QUEEN","streetType":"ST"}],"locality":"AUCKLAND","state":"AUCKLAND","postcode":"1010"}]` + "\n",
 		},
 	}
 

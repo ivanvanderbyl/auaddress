@@ -6,6 +6,7 @@ var nzRegionKeywords = newKeywordTable(map[string]string{
 	"AUCKLAND":           "AUCKLAND",
 	"BAY OF PLENTY":      "BAY OF PLENTY",
 	"CANTERBURY":         "CANTERBURY",
+	"CHATHAM ISLANDS":    "CHATHAM ISLANDS",
 	"GISBORNE":           "GISBORNE",
 	"HAWKE'S BAY":        "HAWKE'S BAY",
 	"HAWKES BAY":         "HAWKE'S BAY",

@@ -12,6 +12,7 @@ import (
 )
 
 type addressOutput struct {
+	Country        string                `json:"country"`
 	DeliveryPoints []deliveryPointOutput `json:"deliveryPoints"`
 	NameLines      []string              `json:"nameLines,omitempty"`
 	Locality       string                `json:"locality"`
@@ -158,6 +159,7 @@ func newAddressOutputs(addresses []*anzaddress.ParsedAddress) []addressOutput {
 
 func newAddressOutput(address *anzaddress.ParsedAddress) addressOutput {
 	output := addressOutput{
+		Country:        string(address.Country),
 		DeliveryPoints: make([]deliveryPointOutput, 0, len(address.DeliveryPoints)),
 		NameLines:      append([]string(nil), address.NameLines...),
 		Locality:       address.Locality,
