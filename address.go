@@ -46,8 +46,10 @@ type DeliveryPoint struct {
 	Postal PostalDelivery
 }
 
-// ParsedAddress contains canonical delivery points, locality details, and compatibility fields.
+// ParsedAddress contains canonical delivery points, country-specific locality details, and compatibility fields.
 type ParsedAddress struct {
+	Country Country
+
 	RawLines []string
 
 	DeliveryPoints []DeliveryPoint
@@ -73,7 +75,7 @@ type ParsedAddress struct {
 	Errors    []error
 }
 
-// Parser parses Australian address strings.
+// Parser parses Australian and New Zealand address strings.
 type Parser struct {
 	strict bool
 }
@@ -132,6 +134,9 @@ func (p *Parser) ParseAll(raw string) ([]*ParsedAddress, error) {
 
 	tokens, err := lexAddress(normalised)
 	if err == nil {
+		if addresses, ok := parseNZAddressSequence(tokens, normalised); ok {
+			return addresses, nil
+		}
 		var addresses []*ParsedAddress
 		addresses, err = parseAddressSequence(tokens, normalised)
 		if err == nil || p.strict {
@@ -327,7 +332,7 @@ func (a *ParsedAddress) FormatLocalityLine() string {
 }
 
 func (a *ParsedAddress) IsValid() bool {
-	return len(a.Errors) == 0 && a.Locality != "" && a.HasDeliveryPoint()
+	return len(a.Errors) == 0 && (a.Country == CountryAU || a.Country == CountryNZ) && a.Locality != "" && a.HasDeliveryPoint()
 }
 
 func (a *ParsedAddress) HasDeliveryPoint() bool {

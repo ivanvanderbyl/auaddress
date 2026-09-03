@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Auckland street",
+    "input": "1 Queen Street, Auckland, Auckland 1010",
+    "delivery": "1 QUEEN ST",
+    "locality": "AUCKLAND",
+    "region": "AUCKLAND",
+    "postcode": "1010"
+  },
+  {
+    "name": "Wellington unit",
+    "input": "Flat 2, 1 Cuba Street, Wellington, Wellington 6011",
+    "delivery": "FLAT 2 1 CUBA ST",
+    "locality": "WELLINGTON",
+    "region": "WELLINGTON",
+    "postcode": "6011"
+  },
+  {
+    "name": "Christchurch street",
+    "input": "12 Hereford Street, Christchurch, Canterbury 8011",
+    "delivery": "12 HEREFORD ST",
+    "locality": "CHRISTCHURCH",
+    "region": "CANTERBURY",
+    "postcode": "8011"
+  },
+  {
+    "name": "PO Box",
+    "input": "PO Box 123, Wellington, Wellington 6140",
+    "delivery": "PO BOX 123",
+    "locality": "WELLINGTON",
+    "region": "WELLINGTON",
+    "postcode": "6140"
+  },
+  {
+    "name": "Rural delivery",
+    "input": "Rural Delivery 1, Kaitaia, Northland 0481",
+    "delivery": "RURAL DELIVERY 1",
+    "locality": "KAITAIA",
+    "region": "NORTHLAND",
+    "postcode": "0481"
+  },
+  {
+    "name": "LINZ macron locality",
+    "input": "10 Station Road, Ōtāhuhu, Auckland 1062",
+    "delivery": "10 STATION RD",
+    "locality": "ŌTĀHUHU",
+    "region": "AUCKLAND",
+    "postcode": "1062"
+  },
+  {
+    "name": "Hawkes Bay alias",
+    "input": "5 Emerson Street, Napier, Hawkes Bay 4110",
+    "delivery": "5 EMERSON ST",
+    "locality": "NAPIER",
+    "region": "HAWKE'S BAY",
+    "postcode": "4110"
+  }
+]

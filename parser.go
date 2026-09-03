@@ -235,6 +235,7 @@ func classifyUnparsedAddress(tokens []token) error {
 
 func addressFromSegment(segment addressSegment, tokens []token, normalized string, sharedNames []string) *ParsedAddress {
 	addr := &ParsedAddress{
+		Country:        CountryAU,
 		DeliveryPoints: segment.points,
 		Locality:       segment.tail.locality.name,
 		State:          segment.tail.state,

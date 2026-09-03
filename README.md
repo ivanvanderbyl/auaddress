@@ -1,8 +1,13 @@
 # anzaddress
 
-Parse complete or partial Australian addresses from Go or the command line.
+Parse complete or partial Australian and New Zealand addresses from Go or the command line.
 `anzaddress` normalises street, postal, locality, state, and postcode components
 without a network connection.
+
+Australian locality names are sourced from Geoscape G-NAF. New Zealand locality
+names are sourced from Toitū Te Whenua / LINZ's NZ Suburbs and Localities dataset;
+the recorded snapshot and required CC BY 4.0 attribution are in
+`nz_localities_manifest.go`.
 
 ## Try the command
 

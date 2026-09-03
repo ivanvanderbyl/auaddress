@@ -63,6 +63,9 @@ func (a *ParsedAddress) ComparisonKey() string {
 	}
 
 	var key strings.Builder
+	if a.Country == CountryNZ {
+		key.WriteString("NZ|")
+	}
 	for index, point := range comparisonDeliveryPoints(a) {
 		if index > 0 {
 			key.WriteByte('+')
@@ -103,6 +106,9 @@ func CompareAddresses(left, right *ParsedAddress) AddressMatch {
 		return match
 	}
 	if !left.IsValid() || !right.IsValid() {
+		return match
+	}
+	if left.Country != right.Country {
 		return match
 	}
 
