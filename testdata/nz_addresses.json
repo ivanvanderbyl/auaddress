@@ -8,6 +8,14 @@
     "postcode": "1010"
   },
   {
+    "name": "country-disambiguated Auckland street",
+    "input": "1 Queen Street, Auckland 1010, New Zealand",
+    "delivery": "1 QUEEN ST",
+    "locality": "AUCKLAND",
+    "region": "",
+    "postcode": "1010"
+  },
+  {
     "name": "Wellington unit",
     "input": "Flat 2, 1 Cuba Street, Wellington, Wellington 6011",
     "delivery": "FLAT 2 1 CUBA ST",

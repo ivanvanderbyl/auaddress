@@ -107,6 +107,48 @@ func TestNewZealandParserRejectsUnknownLocality(t *testing.T) {
 	}
 }
 
+func TestNewZealandFormatRetainsCountryWithoutRegion(t *testing.T) {
+	address, err := Parse("1 Queen Street, Auckland 1010, New Zealand")
+	if err != nil {
+		t.Fatalf("Parse returned an error: %v", err)
+	}
+	if got, want := address.Format(), "1 QUEEN ST\nAUCKLAND 1010 NZ"; got != want {
+		t.Fatalf("Format: got %q, want %q", got, want)
+	}
+
+	reparsed, err := Parse(address.Format())
+	if err != nil {
+		t.Fatalf("reparse formatted address: %v", err)
+	}
+	if got, want := reparsed.ComparisonKey(), address.ComparisonKey(); got != want {
+		t.Errorf("comparison key after parse-format-parse: got %q, want %q", got, want)
+	}
+}
+
+func TestParseAllNewZealandIndependentAddresses(t *testing.T) {
+	input := `ACME LIMITED
+1 Queen Street, Auckland, Auckland 1010
+2 Cuba Street, Wellington, Wellington 6011`
+
+	addresses, err := ParseAll(input)
+	if err != nil {
+		t.Fatalf("ParseAll returned an error: %v", err)
+	}
+	if got, want := len(addresses), 2; got != want {
+		t.Fatalf("address count: got %d, want %d: %#v", got, want, addresses)
+	}
+
+	assertStringSliceEqual(t, "first NameLines", []string{"ACME LIMITED"}, addresses[0].NameLines)
+	assertEqual(t, "first Country", string(CountryNZ), string(addresses[0].Country))
+	assertEqual(t, "first Locality", "AUCKLAND", addresses[0].Locality)
+	assertEqual(t, "first Postcode", "1010", addresses[0].Postcode)
+
+	assertStringSliceEqual(t, "second NameLines", []string{"ACME LIMITED"}, addresses[1].NameLines)
+	assertEqual(t, "second Country", string(CountryNZ), string(addresses[1].Country))
+	assertEqual(t, "second Locality", "WELLINGTON", addresses[1].Locality)
+	assertEqual(t, "second Postcode", "6011", addresses[1].Postcode)
+}
+
 func TestComparisonKeyQualifiesNewZealandAndRejectsCrossCountryMatch(t *testing.T) {
 	newZealand := mustParseAddress(t, "1 Queen Street, Auckland, Auckland 1010")
 	australia := mustParseAddress(t, "1 Queen Street, Auckland QLD 4034")

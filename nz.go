@@ -34,53 +34,151 @@ type nzLocalityMatch struct {
 	next int
 }
 
+type nzAddressTail struct {
+	start    int
+	locality nzLocalityMatch
+	region   string
+	postcode string
+}
+
+type nzAddressSegment struct {
+	deliveryStart int
+	points        []DeliveryPoint
+	tail          nzAddressTail
+	end           int
+}
+
 func parseNZAddressSequence(tokens []token, normalized string) ([]*ParsedAddress, bool) {
-	for deliveryStart := skipSoftTokens(tokens, 0); deliveryStart < len(tokens); deliveryStart++ {
-		deliveryStart = skipSoftTokens(tokens, deliveryStart)
-		if isEOF(tokens, deliveryStart) || !canStartDelivery(tokens, deliveryStart) {
+	position := skipSoftTokens(tokens, 0)
+	first, ok := findFirstNZAddressSegment(tokens, position)
+	if !ok {
+		return nil, false
+	}
+
+	sharedNames := []string(nil)
+	if first.deliveryStart < len(tokens) && tokens[first.deliveryStart].offset > 0 {
+		sharedNames = splitLines(normalized[:tokens[first.deliveryStart].offset])
+	}
+
+	addresses := make([]*ParsedAddress, 0, 2)
+	segment := first
+	for {
+		addresses = append(addresses, nzAddressFromSegment(segment, tokens, normalized, sharedNames))
+
+		position = skipSoftTokens(tokens, segment.end)
+		if isEOF(tokens, position) {
+			return addresses, true
+		}
+
+		var segmentOK bool
+		segment, segmentOK = parseNZAddressSegmentAt(tokens, position)
+		if !segmentOK {
+			return nil, false
+		}
+	}
+}
+
+func findFirstNZAddressSegment(tokens []token, start int) (nzAddressSegment, bool) {
+	for position := start; position < len(tokens); position++ {
+		position = skipSoftTokens(tokens, position)
+		if isEOF(tokens, position) {
+			break
+		}
+		if !canStartDelivery(tokens, position) {
+			continue
+		}
+		if segment, ok := parseNZAddressSegmentAt(tokens, position); ok {
+			return segment, true
+		}
+	}
+	return nzAddressSegment{}, false
+}
+
+func parseNZAddressSegmentAt(tokens []token, deliveryStart int) (nzAddressSegment, bool) {
+	deliveryStart = skipSoftTokens(tokens, deliveryStart)
+	var best nzAddressSegment
+	found := false
+
+	for localityStart := deliveryStart + 1; localityStart < len(tokens); localityStart++ {
+		localityStart = skipSoftTokens(tokens, localityStart)
+		if isEOF(tokens, localityStart) {
+			break
+		}
+
+		locality, ok := matchNZLocality(tokens, localityStart)
+		if !ok {
 			continue
 		}
 
-		for localityStart := deliveryStart + 1; localityStart < len(tokens); localityStart++ {
-			localityStart = skipSoftTokens(tokens, localityStart)
-			if isEOF(tokens, localityStart) {
-				break
-			}
-			locality, ok := matchNZLocality(tokens, localityStart)
-			if !ok {
-				continue
-			}
+		points, next, deliveryOK := recognizeDeliverySequence(tokens, deliveryStart, localityStart)
+		if !deliveryOK || skipSoftTokensBefore(tokens, next, localityStart) != localityStart || !hasNZDeliveryType(points) {
+			continue
+		}
 
-			points, next, deliveryOK := recognizeDeliverySequence(tokens, deliveryStart, localityStart)
-			if !deliveryOK || skipSoftTokensBefore(tokens, next, localityStart) != localityStart {
-				continue
-			}
-			if !hasNZDeliveryType(points) {
-				continue
-			}
+		region, postcode, countryMarked, end := parseNZTail(tokens, locality.next)
+		if region == "" && !countryMarked {
+			continue
+		}
 
-			region, postcode, countryMarked, end := parseNZTail(tokens, locality.next)
-			if region == "" && !countryMarked {
-				continue
-			}
-			if !isEOF(tokens, skipSoftTokens(tokens, end)) {
-				continue
-			}
-
-			address := &ParsedAddress{
-				Country:        CountryNZ,
-				DeliveryPoints: points,
-				Locality:       locality.name,
-				State:          region,
-				Postcode:       postcode,
-				Errors:         make([]error, 0),
-			}
-			projectLegacyDeliveryFields(address)
-			address.RawLines = splitLines(normalized[tokens[deliveryStart].offset:])
-			return []*ParsedAddress{address}, true
+		segment := nzAddressSegment{
+			deliveryStart: deliveryStart,
+			points:        points,
+			tail: nzAddressTail{
+				start:    localityStart,
+				locality: locality,
+				region:   region,
+				postcode: postcode,
+			},
+			end: end,
+		}
+		if !nzSequenceTailCanEnd(tokens, segment) {
+			continue
+		}
+		if !found || preferNZLocalitySegment(segment, best, tokens) {
+			best = segment
+			found = true
 		}
 	}
-	return nil, false
+
+	return best, found
+}
+
+func preferNZLocalitySegment(candidate, current nzAddressSegment, tokens []token) bool {
+	if candidate.end != current.end {
+		return candidate.end < current.end
+	}
+	candidateBoundary := hasExplicitBoundaryBefore(tokens, candidate.tail.start)
+	currentBoundary := hasExplicitBoundaryBefore(tokens, current.tail.start)
+	if candidateBoundary != currentBoundary {
+		return candidateBoundary
+	}
+	return candidate.tail.start < current.tail.start
+}
+
+func nzSequenceTailCanEnd(tokens []token, segment nzAddressSegment) bool {
+	position := skipSoftTokens(tokens, segment.end)
+	return isEOF(tokens, position) || canStartDelivery(tokens, position)
+}
+
+func nzAddressFromSegment(segment nzAddressSegment, tokens []token, normalized string, sharedNames []string) *ParsedAddress {
+	address := &ParsedAddress{
+		Country:        CountryNZ,
+		DeliveryPoints: segment.points,
+		Locality:       segment.tail.locality.name,
+		State:          segment.tail.region,
+		Postcode:       segment.tail.postcode,
+		NameLines:      append([]string(nil), sharedNames...),
+		Errors:         make([]error, 0),
+	}
+	projectLegacyDeliveryFields(address)
+
+	startOffset := tokens[segment.deliveryStart].offset
+	endOffset := len(normalized)
+	if segment.end < len(tokens) && tokens[segment.end].kind != tokenEOF {
+		endOffset = tokens[segment.end].offset
+	}
+	address.RawLines = append(append([]string(nil), sharedNames...), splitLines(normalized[startOffset:endOffset])...)
+	return address
 }
 
 func hasNZDeliveryType(points []DeliveryPoint) bool {

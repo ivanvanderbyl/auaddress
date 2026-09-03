@@ -327,6 +327,12 @@ func (a *ParsedAddress) FormatLocalityLine() string {
 	if a.Postcode != "" {
 		parts = append(parts, a.Postcode)
 	}
+	// A New Zealand locality and postcode without a region is only
+	// unambiguously New Zealand when the country marker is retained. Without
+	// it, parsing the formatted value would lose the country discriminator.
+	if a.Country == CountryNZ && a.Locality != "" && a.State == "" {
+		parts = append(parts, "NZ")
+	}
 
 	return strings.Join(parts, " ")
 }
