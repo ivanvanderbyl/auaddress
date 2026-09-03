@@ -62,7 +62,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func newCommand(stdout, stderr io.Writer, options *outputOptions) *cli.Command {
 	return &cli.Command{
 		Name:      "parse-address",
-		Usage:     "parse and compare Australian addresses",
+		Usage:     "parse and compare Australian and New Zealand addresses",
 		ArgsUsage: "ADDRESS_INPUT",
 		Writer:    stdout,
 		ErrWriter: stderr,
@@ -107,7 +107,7 @@ func parseAction(stdout io.Writer) cli.ActionFunc {
 func newCompareCommand(stdout io.Writer, options *outputOptions) *cli.Command {
 	return &cli.Command{
 		Name:      "compare",
-		Usage:     "compare two Australian addresses",
+		Usage:     "compare two Australian or New Zealand addresses",
 		ArgsUsage: "ADDRESS_A ADDRESS_B",
 		Flags:     []cli.Flag{jsonFlag(options)},
 		Action: func(_ context.Context, command *cli.Command) error {

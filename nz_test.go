@@ -85,20 +85,20 @@ func TestParseNewZealandStreetAddress(t *testing.T) {
 }
 
 func TestNewZealandParserSupportsChathamIslandsTerritory(t *testing.T) {
-	address, err := Parse("1 Main Road, Waitangi, Chatham Islands 8013, New Zealand")
+	address, err := Parse("1 Main Road, Waitangi, Chatham Islands Territory 8013, New Zealand")
 	if err != nil {
 		t.Fatalf("Parse returned an error: %v", err)
 	}
 	if !address.IsValid() {
 		t.Fatalf("expected a valid address, got errors: %v", address.Errors)
 	}
-	if got, want := address.State, "CHATHAM ISLANDS"; got != want {
+	if got, want := address.State, "CHATHAM ISLANDS TERRITORY"; got != want {
 		t.Errorf("region: got %q, want %q", got, want)
 	}
-	if got, want := address.Format(), "1 MAIN RD\nWAITANGI CHATHAM ISLANDS 8013"; got != want {
+	if got, want := address.Format(), "1 MAIN RD\nWAITANGI CHATHAM ISLANDS TERRITORY 8013"; got != want {
 		t.Errorf("Format: got %q, want %q", got, want)
 	}
-	if got, want := address.ComparisonKey(), "NZ|STREET{UNIT=;LEVEL=;NUMBER=1;NAME=MAIN;TYPE=RD;SUFFIX=}|LOCALITY=WAITANGI|STATE=CHATHAM ISLANDS|POSTCODE=8013"; got != want {
+	if got, want := address.ComparisonKey(), "NZ|STREET{UNIT=;LEVEL=;NUMBER=1;NAME=MAIN;TYPE=RD;SUFFIX=}|LOCALITY=WAITANGI|STATE=CHATHAM ISLANDS TERRITORY|POSTCODE=8013"; got != want {
 		t.Errorf("ComparisonKey: got %q, want %q", got, want)
 	}
 	reparsed, err := Parse(address.Format())
