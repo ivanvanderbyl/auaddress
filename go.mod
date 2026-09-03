@@ -1,4 +1,4 @@
-module github.com/ivanvanderbyl/auaddress
+module github.com/ivanvanderbyl/anzaddress
 
 go 1.25.5
 

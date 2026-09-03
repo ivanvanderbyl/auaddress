@@ -1,4 +1,4 @@
-package auaddress
+package anzaddress
 
 type addressTail struct {
 	start    int

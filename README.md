@@ -1,7 +1,7 @@
-# auaddress
+# anzaddress
 
 Parse complete or partial Australian addresses from Go or the command line.
-`auaddress` normalises street, postal, locality, state, and postcode components
+`anzaddress` normalises street, postal, locality, state, and postcode components
 without a network connection.
 
 ## Try the command
@@ -9,7 +9,7 @@ without a network connection.
 Install the binary with Go:
 
 ```bash
-go install github.com/ivanvanderbyl/auaddress/cmd/parse-address@latest
+go install github.com/ivanvanderbyl/anzaddress/cmd/parse-address@latest
 ```
 
 Parse an address directly:
@@ -71,7 +71,7 @@ with one blank line.
 ## Use the Go package
 
 ```bash
-go get github.com/ivanvanderbyl/auaddress
+go get github.com/ivanvanderbyl/anzaddress
 ```
 
 ```go
@@ -81,11 +81,11 @@ import (
     "fmt"
     "log"
 
-    "github.com/ivanvanderbyl/auaddress"
+    "github.com/ivanvanderbyl/anzaddress"
 )
 
 func main() {
-    address, err := auaddress.Parse("3A/45 High Street, Richmond")
+    address, err := anzaddress.Parse("3A/45 High Street, Richmond")
     if err != nil {
         log.Fatal(err)
     }
@@ -158,14 +158,14 @@ components, and deterministic keys as camelCase JSON fields.
 The same comparison is available from Go:
 
 ```go
-left, _ := auaddress.Parse("123 Main Street, Richmond")
-right, _ := auaddress.Parse("123 Main St, Richmond VIC 3121")
+left, _ := anzaddress.Parse("123 Main Street, Richmond")
+right, _ := anzaddress.Parse("123 Main St, Richmond VIC 3121")
 
-match := auaddress.CompareAddresses(left, right)
-fmt.Println(match.Kind == auaddress.PartialMatch)                 // true
-fmt.Println(match.MatchedThrough == auaddress.MatchLocality)     // true
-fmt.Println(match.MissingFromLeft[0] == auaddress.MatchState)    // true
-fmt.Println(match.MissingFromLeft[1] == auaddress.MatchPostcode) // true
+match := anzaddress.CompareAddresses(left, right)
+fmt.Println(match.Kind == anzaddress.PartialMatch)                 // true
+fmt.Println(match.MatchedThrough == anzaddress.MatchLocality)     // true
+fmt.Println(match.MissingFromLeft[0] == anzaddress.MatchState)    // true
+fmt.Println(match.MissingFromLeft[1] == anzaddress.MatchPostcode) // true
 ```
 
 `ComparisonKey` exposes the canonical components as a deterministic string.
@@ -176,7 +176,7 @@ Comparison does not use edit distance, phonetic matching, or typo correction.
 Call `ParseAll` to parse multiple addresses in Go:
 
 ```go
-addresses, err := auaddress.ParseAll(`School Infrastructure NSW
+addresses, err := anzaddress.ParseAll(`School Infrastructure NSW
 Level 8, 259 George Street, Sydney, NSW 2000
 GPO Box 33, Sydney, NSW 2001`)
 if err != nil {
@@ -204,7 +204,7 @@ The default parser is lenient. It returns recognised structure and records the
 first grammar or validation failure in `ParsedAddress.Errors`:
 
 ```go
-address, err := auaddress.Parse(input)
+address, err := anzaddress.Parse(input)
 if err != nil {
     return err // Empty input is always returned directly.
 }
@@ -217,7 +217,7 @@ Strict mode returns the first failure directly. With `ParseAll`, it also
 returns any complete addresses parsed before that failure:
 
 ```go
-parser := auaddress.NewParser(auaddress.WithStrict(true))
+parser := anzaddress.NewParser(anzaddress.WithStrict(true))
 addresses, err := parser.ParseAll(input)
 ```
 

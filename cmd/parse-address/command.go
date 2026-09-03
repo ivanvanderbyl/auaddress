@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ivanvanderbyl/auaddress"
+	"github.com/ivanvanderbyl/anzaddress"
 	cli "github.com/urfave/cli/v3"
 )
 
@@ -123,7 +123,7 @@ func newCompareCommand(stdout io.Writer, options *outputOptions) *cli.Command {
 				return fmt.Errorf("right address: %w", err)
 			}
 
-			match := auaddress.CompareAddresses(left, right)
+			match := anzaddress.CompareAddresses(left, right)
 			if command.Bool("json") {
 				return json.NewEncoder(stdout).Encode(newComparisonOutput(match))
 			}
@@ -140,15 +140,15 @@ func writeError(writer io.Writer, jsonOutput bool, err error) {
 	_, _ = fmt.Fprintln(writer, err)
 }
 
-func parseStrict(raw string) (*auaddress.ParsedAddress, error) {
-	return auaddress.NewParser(auaddress.WithStrict(true)).Parse(raw)
+func parseStrict(raw string) (*anzaddress.ParsedAddress, error) {
+	return anzaddress.NewParser(anzaddress.WithStrict(true)).Parse(raw)
 }
 
-func parseAllStrict(raw string) ([]*auaddress.ParsedAddress, error) {
-	return auaddress.NewParser(auaddress.WithStrict(true)).ParseAll(raw)
+func parseAllStrict(raw string) ([]*anzaddress.ParsedAddress, error) {
+	return anzaddress.NewParser(anzaddress.WithStrict(true)).ParseAll(raw)
 }
 
-func newAddressOutputs(addresses []*auaddress.ParsedAddress) []addressOutput {
+func newAddressOutputs(addresses []*anzaddress.ParsedAddress) []addressOutput {
 	outputs := make([]addressOutput, len(addresses))
 	for i, address := range addresses {
 		outputs[i] = newAddressOutput(address)
@@ -156,7 +156,7 @@ func newAddressOutputs(addresses []*auaddress.ParsedAddress) []addressOutput {
 	return outputs
 }
 
-func newAddressOutput(address *auaddress.ParsedAddress) addressOutput {
+func newAddressOutput(address *anzaddress.ParsedAddress) addressOutput {
 	output := addressOutput{
 		DeliveryPoints: make([]deliveryPointOutput, 0, len(address.DeliveryPoints)),
 		NameLines:      append([]string(nil), address.NameLines...),
@@ -167,7 +167,7 @@ func newAddressOutput(address *auaddress.ParsedAddress) addressOutput {
 	for _, point := range address.DeliveryPoints {
 		delivery := deliveryPointOutput{}
 		switch point.Kind {
-		case auaddress.DeliveryPointStreet:
+		case anzaddress.DeliveryPointStreet:
 			delivery.Kind = "street"
 			delivery.Unit = point.Street.Unit
 			delivery.Level = point.Street.Level
@@ -175,7 +175,7 @@ func newAddressOutput(address *auaddress.ParsedAddress) addressOutput {
 			delivery.StreetName = point.Street.StreetName
 			delivery.StreetType = point.Street.StreetType
 			delivery.StreetSuffix = point.Street.StreetSuffix
-		case auaddress.DeliveryPointPostal:
+		case anzaddress.DeliveryPointPostal:
 			delivery.Kind = "postal"
 			delivery.PostalType = point.Postal.Type
 			delivery.PostalNumber = point.Postal.Number
@@ -187,7 +187,7 @@ func newAddressOutput(address *auaddress.ParsedAddress) addressOutput {
 	return output
 }
 
-func newComparisonOutput(match auaddress.AddressMatch) comparisonOutput {
+func newComparisonOutput(match anzaddress.AddressMatch) comparisonOutput {
 	return comparisonOutput{
 		Kind:             matchKindName(match.Kind),
 		MatchedThrough:   matchComponentName(match.MatchedThrough),
@@ -198,14 +198,14 @@ func newComparisonOutput(match auaddress.AddressMatch) comparisonOutput {
 	}
 }
 
-func writeComparison(writer io.Writer, match auaddress.AddressMatch) error {
+func writeComparison(writer io.Writer, match anzaddress.AddressMatch) error {
 	if _, err := fmt.Fprintln(writer, matchKindName(match.Kind)); err != nil {
 		return err
 	}
-	if match.Kind != auaddress.PartialMatch {
+	if match.Kind != anzaddress.PartialMatch {
 		return nil
 	}
-	if match.MatchedThrough != auaddress.MatchNone {
+	if match.MatchedThrough != anzaddress.MatchNone {
 		if _, err := fmt.Fprintf(writer, "matched through: %s\n", matchComponentName(match.MatchedThrough)); err != nil {
 			return err
 		}
@@ -223,18 +223,18 @@ func writeComparison(writer io.Writer, match auaddress.AddressMatch) error {
 	return nil
 }
 
-func matchKindName(kind auaddress.MatchKind) string {
+func matchKindName(kind anzaddress.MatchKind) string {
 	switch kind {
-	case auaddress.ExactMatch:
+	case anzaddress.ExactMatch:
 		return "exact"
-	case auaddress.PartialMatch:
+	case anzaddress.PartialMatch:
 		return "partial"
 	default:
 		return "no match"
 	}
 }
 
-func matchComponentNames(components []auaddress.MatchComponent) []string {
+func matchComponentNames(components []anzaddress.MatchComponent) []string {
 	names := make([]string, 0, len(components))
 	for _, component := range components {
 		if name := matchComponentName(component); name != "" {
@@ -244,31 +244,31 @@ func matchComponentNames(components []auaddress.MatchComponent) []string {
 	return names
 }
 
-func matchComponentName(component auaddress.MatchComponent) string {
+func matchComponentName(component anzaddress.MatchComponent) string {
 	switch component {
-	case auaddress.MatchDeliveryPoint:
+	case anzaddress.MatchDeliveryPoint:
 		return "deliveryPoint"
-	case auaddress.MatchUnit:
+	case anzaddress.MatchUnit:
 		return "unit"
-	case auaddress.MatchLevel:
+	case anzaddress.MatchLevel:
 		return "level"
-	case auaddress.MatchStreetNumber:
+	case anzaddress.MatchStreetNumber:
 		return "streetNumber"
-	case auaddress.MatchStreetName:
+	case anzaddress.MatchStreetName:
 		return "streetName"
-	case auaddress.MatchStreetType:
+	case anzaddress.MatchStreetType:
 		return "streetType"
-	case auaddress.MatchStreetSuffix:
+	case anzaddress.MatchStreetSuffix:
 		return "streetSuffix"
-	case auaddress.MatchPostalType:
+	case anzaddress.MatchPostalType:
 		return "postalType"
-	case auaddress.MatchPostalNumber:
+	case anzaddress.MatchPostalNumber:
 		return "postalNumber"
-	case auaddress.MatchLocality:
+	case anzaddress.MatchLocality:
 		return "locality"
-	case auaddress.MatchState:
+	case anzaddress.MatchState:
 		return "state"
-	case auaddress.MatchPostcode:
+	case anzaddress.MatchPostcode:
 		return "postcode"
 	default:
 		return ""

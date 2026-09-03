@@ -312,7 +312,7 @@ func renderLocalities(localities map[string]uint8, sourceName string) ([]byte, e
 	source.WriteString("// Source: ")
 	source.WriteString(sourceName)
 	source.WriteString(" (Geoscape G-NAF, GDA2020 PSV)\n\n")
-	source.WriteString("package auaddress\n\n")
+	source.WriteString("package anzaddress\n\n")
 	fmt.Fprintf(&source, "const maxLocalityTokens = %d\n\n", maxTokens)
 	source.WriteString("var localityStates = map[string]stateMask{\n")
 	for _, name := range names {

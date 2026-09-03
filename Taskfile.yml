@@ -37,34 +37,34 @@ tasks:
     requires:
       vars: [VERSION]
     env:
-      AUADDRESS_RELEASE_VERSION: '{{.VERSION}}'
+      ANZADDRESS_RELEASE_VERSION: '{{.VERSION}}'
     preconditions:
-      - sh: test -n "$AUADDRESS_RELEASE_VERSION"
+      - sh: test -n "$ANZADDRESS_RELEASE_VERSION"
         msg: VERSION must not be empty
-      - sh: printf '%s\n' "$AUADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+      - sh: printf '%s\n' "$ANZADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
         msg: VERSION must use vMAJOR.MINOR.PATCH format
       - sh: test -z "$(git status --porcelain)"
         msg: The worktree must be clean before creating a release tag
-      - sh: '! git rev-parse --verify --quiet "refs/tags/$AUADDRESS_RELEASE_VERSION" >/dev/null'
+      - sh: '! git rev-parse --verify --quiet "refs/tags/$ANZADDRESS_RELEASE_VERSION" >/dev/null'
         msg: The requested tag already exists
     cmds:
       - task: gnaf:verify
       - task: test
-      - git tag -a "$AUADDRESS_RELEASE_VERSION" -m "Release $AUADDRESS_RELEASE_VERSION"
-      - echo "Created local tag $AUADDRESS_RELEASE_VERSION. Push it with task release:push VERSION=$AUADDRESS_RELEASE_VERSION"
+      - git tag -a "$ANZADDRESS_RELEASE_VERSION" -m "Release $ANZADDRESS_RELEASE_VERSION"
+      - echo "Created local tag $ANZADDRESS_RELEASE_VERSION. Push it with task release:push VERSION=$ANZADDRESS_RELEASE_VERSION"
 
   release:push:
     desc: Push an existing release tag (VERSION=vX.Y.Z)
     requires:
       vars: [VERSION]
     env:
-      AUADDRESS_RELEASE_VERSION: '{{.VERSION}}'
+      ANZADDRESS_RELEASE_VERSION: '{{.VERSION}}'
     preconditions:
-      - sh: test -n "$AUADDRESS_RELEASE_VERSION"
+      - sh: test -n "$ANZADDRESS_RELEASE_VERSION"
         msg: VERSION must not be empty
-      - sh: printf '%s\n' "$AUADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+      - sh: printf '%s\n' "$ANZADDRESS_RELEASE_VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
         msg: VERSION must use vMAJOR.MINOR.PATCH format
-      - sh: git rev-parse --verify --quiet "refs/tags/$AUADDRESS_RELEASE_VERSION" >/dev/null
+      - sh: git rev-parse --verify --quiet "refs/tags/$ANZADDRESS_RELEASE_VERSION" >/dev/null
         msg: Create the local tag with task release first
     cmds:
-      - git push origin "refs/tags/$AUADDRESS_RELEASE_VERSION"
+      - git push origin "refs/tags/$ANZADDRESS_RELEASE_VERSION"

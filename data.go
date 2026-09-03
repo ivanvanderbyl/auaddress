@@ -1,4 +1,4 @@
-package auaddress
+package anzaddress
 
 var stateTypes = map[string]string{
 	"NEW SOUTH WALES":              "NSW",

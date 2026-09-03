@@ -1,4 +1,4 @@
-package auaddress
+package anzaddress
 
 import (
 	"encoding/json"
